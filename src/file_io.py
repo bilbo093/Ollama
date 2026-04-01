@@ -109,7 +109,7 @@ def validate_file_format(file_path: str) -> bool:
     return True
 
 
-def save_to_txt(content: str, output_file: str, title: str = "学术风格摘要"):
+def save_to_txt(content: str, output_file: str, title: str = "学术风格摘要", mode: str = 'w'):
     """
     保存内容到 txt 文件
 
@@ -117,16 +117,18 @@ def save_to_txt(content: str, output_file: str, title: str = "学术风格摘要
         content: 要保存的内容
         output_file: 输出文件路径
         title: 文件标题（默认：学术风格摘要）
+        mode: 文件打开模式，'w'为覆盖写入，'a'为追加写入（默认：'w'）
 
     Returns:
         None
     """
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(output_file, mode, encoding='utf-8') as f:
         f.write(f"{title}\n")
         f.write("=" * 60 + "\n\n")
         f.write(content)
         f.write("\n\n")
         f.write("=" * 60 + "\n")
+        f.flush()  # 立即刷新到磁盘
 
 
 __all__ = [

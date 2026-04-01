@@ -99,7 +99,7 @@ class TextProcessor:
 
 def generate_and_save_chapter_summaries(content: str, output_file: str):
     """
-    生成章节总结并保存到文件
+    生成章节总结并保存到文件（流式写入，每处理完一个章节就写入）
 
     Args:
         content: 文档内容
@@ -114,31 +114,62 @@ def generate_and_save_chapter_summaries(content: str, output_file: str):
     chapters = split_content_by_chapters(content)
     print(f"[信息] 识别到 {len(chapters)} 个章节")
 
-    summaries = []
     config = PROCESSOR_CONFIGS['chapter']
     processor = TextProcessor(config['role'], config['prompt_template'])
 
+    # 初始化文件（写入标题，覆盖模式）
+    save_to_txt("", output_file, "章节总结", mode='w')
+
+    # 逐个处理章节并追加写入
     for idx, chapter in enumerate(chapters, 1):
         print(f"[章节 {idx}/{len(chapters)}] {chapter['title']}")
         summary = processor.process_content(chapter['content'], chapter_title=chapter['title'])
-        summaries.append({
-            'title': chapter['title'],
-            'summary': summary
-        })
 
-    # 保存结果
-    all_summaries = ""
-    for item in summaries:
-        all_summaries += f"{item['title']}\n\n"
-        all_summaries += f"{item['summary']}\n\n"
-        all_summaries += "=" * 60 + "\n\n"
+        # 立即追加写入当前章节
+        chapter_content = f"{chapter['title']}\n\n{summary}\n\n{'=' * 60}\n\n"
+        save_to_txt(chapter_content, output_file, "", mode='a')
 
-    save_to_txt(all_summaries, output_file, "章节总结")
-    print(f"[完成] 共生成 {len(summaries)} 个章节总结，已保存至：{output_file}")
+    print(f"[完成] 共生成 {len(chapters)} 个章节总结，已保存至：{output_file}")
+
+
+def generate_and_save_grammar_checks(content: str, output_file: str):
+    """
+    对每个章节进行语法和标点检查并保存到文件（流式写入，每处理完一个章节就写入）
+
+    Args:
+        content: 文档内容
+        output_file: 输出文件路径
+
+    Returns:
+        None
+    """
+    from file_io import save_to_txt
+
+    # 按章节分割内容
+    chapters = split_content_by_chapters(content)
+    print(f"[信息] 识别到 {len(chapters)} 个章节")
+
+    config = PROCESSOR_CONFIGS['grammar']
+    processor = TextProcessor(config['role'], config['prompt_template'])
+
+    # 初始化文件（写入标题，覆盖模式）
+    save_to_txt("", output_file, "语法检查", mode='w')
+
+    # 逐个处理章节并追加写入
+    for idx, chapter in enumerate(chapters, 1):
+        print(f"[检查章节 {idx}/{len(chapters)}] {chapter['title']}")
+        check_result = processor.process_content(chapter['content'], chapter_title=chapter['title'])
+
+        # 立即追加写入当前章节
+        chapter_content = f"{chapter['title']}\n{check_result}\n{'=' * 60}\n"
+        save_to_txt(chapter_content, output_file, "", mode='a')
+
+    print(f"[完成] 共完成 {len(chapters)} 个章节的语法检查，已保存至：{output_file}")
 
 
 __all__ = [
     'chat_streaming',
     'TextProcessor',
     'generate_and_save_chapter_summaries',
+    'generate_and_save_grammar_checks',
 ]

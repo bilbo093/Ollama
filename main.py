@@ -15,7 +15,7 @@ src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from ollama_processor import generate_and_save_chapter_summaries, TextProcessor
+from ollama_processor import generate_and_save_chapter_summaries, generate_and_save_grammar_checks, TextProcessor
 from file_io import read_file_content, validate_file_format, save_to_txt
 from config import PROCESSOR_CONFIGS
 from segmented_evaluator import three_stage_evaluation
@@ -25,13 +25,14 @@ def main():
     """主函数：解析命令行参数并执行对应操作"""
     parser = argparse.ArgumentParser(
         prog='academic-doc',
-        description='学术文档处理工具 - 生成学术摘要、章节总结、分段评价',
+        description='学术文档处理工具 - 生成学术摘要、章节总结、分段评价、语法检查',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例：
   生成学术摘要:  python main.py summarizer -i input.txt -o output.txt
   生成章节总结:  python main.py chapter -i input.txt -o output.txt
   三阶段评价:   python main.py evaluate -i input.txt -o output.txt
+  语法标点检查:  python main.py grammar -i input.txt -o output.txt
         '''
     )
 
@@ -61,6 +62,13 @@ def main():
                                 help='每块字符数（默认：30000）')
     evaluate_parser.add_argument('--overlap', type=int, default=3000,
                                 help='重叠字符数（默认：3000）')
+
+    # grammar 子命令
+    grammar_parser = subparsers.add_parser('grammar', help='章节语法和标点检查')
+    grammar_parser.add_argument('-i', '--input', type=str, required=True,
+                               help='输入文件路径 (.txt 或 .docx)')
+    grammar_parser.add_argument('-o', '--output', type=str, required=True,
+                               help='输出文件路径 (.txt)')
 
     args = parser.parse_args()
 
@@ -154,6 +162,22 @@ def main():
                 f.write(output_content)
 
             print(f"\n[完成] 评价报告已保存至：{args.output}")
+
+        elif args.command == 'grammar':
+            from config import DEFAULT_MODEL
+            print(f"[使用] 模型：{DEFAULT_MODEL}")
+            print("[任务] 章节语法和标点检查...")
+
+            if not os.path.exists(args.input):
+                print(f"[错误] 输入文件不存在：{args.input}")
+                sys.exit(1)
+
+            if not validate_file_format(args.input):
+                sys.exit(1)
+
+            # 读取文件内容并生成语法检查
+            content = read_file_content(args.input)
+            generate_and_save_grammar_checks(content, args.output)
 
     except Exception as e:
         print(f"[错误] {e}")
