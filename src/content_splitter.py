@@ -5,7 +5,7 @@
 提供按章节分段、按字符数分段等功能
 """
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 
 def is_chapter_title(text: str) -> bool:
@@ -133,53 +133,65 @@ def split_content_by_chapters(content: str) -> List[Dict[str, str]]:
     # 首先尝试从目录提取章节信息
     toc_chapters = extract_chapters_from_toc(lines)
 
-    # 打印从目录提取的章节信息
-    print(f"\n{'='*60}")
-    print(f"从目录提取到 {len(toc_chapters)} 个章节：")
-    print(f"{'='*60}")
-    for i, chapter in enumerate(toc_chapters, 1):
-        print(f"{i}. {chapter['title']}")
-    print(f"{'='*60}\n")
-
     if not toc_chapters:
         # 如果没有找到目录，返回空列表
         print("警告：未找到目录，无法进行章节分割")
         return []
 
     # 在正文中查找章节标题的位置（跳过目录区域）
+    # 搜索范围分为两部分：0-toc_start（目录前）和 toc_end-文末（目录后）
 
-    # 找到目录结束的位置
+    # 找到目录开始和结束的位置
+    # 目录从"目录"这种单独行开始，一直到最后一个符合目录标准的行结束
+    toc_start = -1
     toc_end = 0
     in_toc = False
+
+    # 目录匹配模式：标题 + 空格/制表符 + 页码（阿拉伯数字或罗马数字）
+    toc_pattern = r'^(.+?)\s+[IVXLCDM\d]+$'
+
     for i, line in enumerate(lines):
         if is_table_of_contents(line):
             in_toc = True
+            if toc_start == -1:
+                toc_start = i
+            toc_end = i  # 更新目录结束位置
             continue
-        if in_toc:
-            # 遇到正文内容（长段落）时，标记目录结束
-            if len(line.strip()) > 50 and not is_chapter_title(line.strip()):
-                toc_end = i
-                break
 
-    # 查找起点：从文档开头开始搜索，确保能找到前置章节（如"摘  要"）
-    search_start = 0
-    search_end = len(lines)
+        if in_toc:
+            # 检查是否仍符合目录标准（标题 + 空格/制表符 + 页码）
+            stripped = line.strip()
+            if not stripped:
+                # 空行也属于目录范围的一部分
+                toc_end = i
+                continue
+
+            if re.match(toc_pattern, stripped):
+                # 符合目录格式，更新目录结束位置
+                toc_end = i
+            else:
+                # 不符合目录格式，目录结束
+                break
 
     chapter_positions = []
 
     for idx, chapter in enumerate(toc_chapters):
         chapter_title = chapter['title']
-        # 确定搜索起始位置：如果是第一个章节，从文档开头搜索；否则从上一个章节位置后搜索
+        # 确定搜索起始位置：如果是第一个章节，从目录结束位置开始搜索；否则从上一个章节位置后搜索
         if idx == 0:
-            search_start = 0
+            search_start = max(0, toc_end)
         else:
             search_start = chapter_positions[-1]['position'] + 1
 
         search_end = len(lines)
 
-        # 收集所有匹配的位置
+        # 收集所有匹配的位置（排除目录范围）
         matched_positions = []
         for i in range(search_start, search_end):
+            # 跳过目录范围内的行
+            if toc_start != -1 and toc_start <= i <= toc_end:
+                continue
+
             line = lines[i]
             stripped = line.strip()
 
@@ -190,22 +202,42 @@ def split_content_by_chapters(content: str) -> List[Dict[str, str]]:
             elif chapter_title in stripped and len(stripped) <= len(chapter_title) + 10:
                 matched_positions.append(i)
 
+        # 如果在目录后没找到，尝试在目录前查找（如"摘  要"等前置章节）
+        if not matched_positions and idx == 0:
+            search_start_before = 0
+            search_end_before = toc_start
+            for i in range(search_start_before, search_end_before):
+                line = lines[i]
+                stripped = line.strip()
+
+                # 第一优先级：完全匹配且长度相等
+                if stripped == chapter_title:
+                    matched_positions.append(i)
+                    break
+                # 第二优先级：包含标题且长度略微增长（允许最多多10个字符）
+                elif chapter_title in stripped and len(stripped) <= len(chapter_title) + 10:
+                    matched_positions.append(i)
+                    break
+
         if matched_positions:
             # 选择比上一个标题大的最小行号（由于search_start已确保，取第一个即可）
-            chapter_positions.append({
-                'title': chapter_title,
-                'position': matched_positions[0]
-            })
+            pos = matched_positions[0]
 
             # 检查是否遇到参考文献，让用户选择是否继续
-            pos = matched_positions[0]
             if '参考文献' in chapter_title:
                 print(f"\n{'='*60}")
                 print(f"已检测到参考文献章节（行号：{pos}）")
                 choice = input("是否继续处理后续章节？(y/n): ").strip().lower()
                 if choice != 'y':
                     print("用户选择停止，只处理到参考文献之前的章节")
+                    # 不添加参考文献，直接跳出循环
                     break
+
+            # 添加章节位置
+            chapter_positions.append({
+                'title': chapter_title,
+                'position': pos
+            })
         else:
             print(f"警告：未找到章节 '{chapter_title}' 的独立标题行")
 

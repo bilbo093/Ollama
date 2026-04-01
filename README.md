@@ -11,7 +11,7 @@
 ╚══════════════════════╝
 ```
 
-基于 Ollama 本地大模型的学术文档智能处理工具，为研究人员、学生提供高效的文档分析能力。支持 TXT/DOCX 文档的学术摘要生成、章节总结和三阶段分段评价功能。
+基于 Ollama 本地大模型的学术文档智能处理工具，为研究人员、学生提供高效的文档分析能力。支持 TXT/DOCX 文档的学术摘要生成、章节总结、三阶段分段评价和语法检查功能。
 
 ## 安装
 
@@ -33,6 +33,21 @@ python main.py chapter -i input.txt -o output.txt
 # 三阶段分段评价
 python main.py evaluate -i input.txt -o output.txt
 python main.py evaluate -i input.txt -o output.txt --chunk-size 30000 --overlap 3000
+
+# 语法检查并修改（自动推断文件）
+python main.py grammar -i input.docx
+
+# 语法检查并修改（指定语法检查文件）
+python main.py grammar -i input.docx -o grammar.txt
+
+# 语法检查并修改（指定输出 DOCX 文件）
+python main.py grammar -i input.docx -o output.docx
+
+# 仅高亮显示修改建议（不实际修改）
+python main.py grammar -i input.docx --highlight-only
+
+# 应用所有修改（包括润色建议）
+python main.py grammar -i input.docx --apply-suggestions
 ```
 
 ## 命令行参数
@@ -53,6 +68,14 @@ python main.py evaluate -i input.txt -o output.txt --chunk-size 30000 --overlap 
   - `-o, --output`: 输出文件路径 (.txt)
   - `--chunk-size`: 每块字符数（默认：30000）
   - `--overlap`: 重叠字符数（默认：3000）
+- `grammar`: 语法检查并修改 DOCX 文件
+  - `-i, --input`: 输入 DOCX 文件路径（必需）
+  - `-o, --output`: 语法检查结果文件路径（.txt）或输出 DOCX 文件路径（.docx，可选）
+    - 指定 .txt 文件：使用指定的语法检查结果文件
+    - 指定 .docx 文件：输出修改后的 DOCX 文件
+    - 未指定：自动使用 input/{文件名}_grammar.txt 作为语法检查文件，输出 {输入文件名}_fixed.docx
+  - `--apply-suggestions`: 是否应用润色建议（默认只应用硬性错误）
+  - `--highlight-only`: 仅高亮显示修改建议，不实际修改文档（输出文件名：{输入文件名}_highlighted.docx）
 
 ## 注意事项
 
