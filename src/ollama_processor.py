@@ -13,7 +13,7 @@ from config import (
 from content_splitter import split_content_by_chapters
 
 
-def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK, show_progress: bool = True) -> str:
+def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK) -> str:
     """
     流式获取内容并使用缓冲区方式显示
 
@@ -21,7 +21,6 @@ def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK, show
         model: Ollama 模型名称
         messages: 消息列表
         think: 是否启用思考模式
-        show_progress: 是否显示进度
 
     Returns:
         完整的响应内容
@@ -37,22 +36,19 @@ def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK, show
             full_content += content
             char_count += len(content)
 
-            if show_progress:
-                # 检查缓冲区中的字符数量是否达到了配置的大小
-                while len(buffer) >= STREAM_BUFFER_SIZE:
-                    # 提取前 STREAM_BUFFER_SIZE 个字符进行打印
-                    to_print = buffer[:STREAM_BUFFER_SIZE]
-                    display_text = to_print.replace('\n', ' ')
-                    print(f"\r[进度] 已生成 {char_count} 字符: {display_text[-50:]}", end='', flush=True)
+            # 检查缓冲区中的字符数量是否达到了配置的大小
+            while len(buffer) >= STREAM_BUFFER_SIZE:
+                # 提取前 STREAM_BUFFER_SIZE 个字符进行打印
+                to_print = buffer[:STREAM_BUFFER_SIZE]
+                display_text = to_print.replace('\n', ' ')
+                print(f"\r[进度] 已生成 {char_count} 字符: {display_text[-50:]}", end='', flush=True)
 
-                    # 更新缓冲区，保留剩余未打印的字符
-                    buffer = buffer[STREAM_BUFFER_SIZE:]
+                # 更新缓冲区，保留剩余未打印的字符
+                buffer = buffer[STREAM_BUFFER_SIZE:]
 
         # 循环结束后，如果缓冲区里还有剩余的内容，则全部打印出来
-        if buffer and show_progress:
+        if buffer:
             print(f"\r[完成] 分析完成,共生成 {char_count} 字符{' ' * 50}")
-        elif buffer:
-            print(buffer, end='\r', flush=True)
 
         return full_content
     except Exception as e:
@@ -126,50 +122,14 @@ def generate_and_save_chapter_summaries(content: str, output_file: str):
         summary = processor.process_content(chapter['content'], chapter_title=chapter['title'])
 
         # 立即追加写入当前章节
-        chapter_content = f"{chapter['title']}\n\n{summary}\n\n{'=' * 60}\n\n"
+        chapter_content = f"\n\n{chapter['title']}\n\n{summary}\n\n"
         save_to_txt(chapter_content, output_file, "", mode='a')
 
     print(f"[完成] 共生成 {len(chapters)} 个章节总结，已保存至：{output_file}")
-
-
-def generate_and_save_grammar_checks(content: str, output_file: str):
-    """
-    对每个章节进行语法和标点检查并保存到文件（流式写入，每处理完一个章节就写入）
-
-    Args:
-        content: 文档内容
-        output_file: 输出文件路径
-
-    Returns:
-        None
-    """
-    from file_io import save_to_txt
-
-    # 按章节分割内容
-    chapters = split_content_by_chapters(content)
-    print(f"[信息] 识别到 {len(chapters)} 个章节")
-
-    config = PROCESSOR_CONFIGS['grammar']
-    processor = TextProcessor(config['role'], config['prompt_template'])
-
-    # 初始化文件（写入标题，覆盖模式）
-    save_to_txt("", output_file, "语法检查", mode='w')
-
-    # 逐个处理章节并追加写入
-    for idx, chapter in enumerate(chapters, 1):
-        print(f"[检查章节 {idx}/{len(chapters)}] {chapter['title']}")
-        check_result = processor.process_content(chapter['content'], chapter_title=chapter['title'])
-
-        # 立即追加写入当前章节
-        chapter_content = f"{chapter['title']}\n{check_result}\n{'=' * 60}\n"
-        save_to_txt(chapter_content, output_file, "", mode='a')
-
-    print(f"[完成] 共完成 {len(chapters)} 个章节的语法检查，已保存至：{output_file}")
 
 
 __all__ = [
     'chat_streaming',
     'TextProcessor',
     'generate_and_save_chapter_summaries',
-    'generate_and_save_grammar_checks',
 ]

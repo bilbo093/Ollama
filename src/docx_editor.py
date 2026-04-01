@@ -2,379 +2,325 @@
 # -*- coding: utf-8 -*-
 """
 DOCX 文件编辑器
-根据语法检查结果修改 DOCX 文件
+逐段处理 DOCX 文件，直接应用语法检查结果
 """
 
 import os
 import re
-from typing import Dict, List
+from typing import Tuple, List, Dict
 from docx import Document
+from ollama_processor import chat_streaming
+from config import DEFAULT_MODEL, PROCESSOR_CONFIGS
+from file_io import save_to_txt
+from content_splitter import is_table_of_contents, is_chapter_title
 
 
-def parse_grammar_check_file(grammar_file: str) -> List[Dict]:
+def _should_skip_paragraph(text: str) -> Tuple[bool, str]:
     """
-    解析语法检查结果文件，提取修改建议
+    判断段落是否应该跳过
 
     Args:
-        grammar_file: 语法检查结果文件路径
+        text: 段落文本
 
     Returns:
-        List[Dict]: 修改建议列表，每个元素只包含:
-            - chapter_title: 章节标题
-            - original: 原句
-            - corrected: 修改后的句子
+        Tuple[bool, str]: (是否跳过, 跳过原因)
     """
-    modifications = []
+    text_stripped = text.strip()
 
-    if not os.path.exists(grammar_file):
-        print(f"[警告] 语法检查文件不存在：{grammar_file}")
-        return modifications
+    # 1. 跳过空段落
+    if not text_stripped:
+        return True, "空段落"
 
-    with open(grammar_file, 'r', encoding='utf-8') as f:
-        content = f.read()
+    # 2. 跳过过短的段落（少于50个字符）
+    if len(text_stripped) < 50:
+        return True, "段落过短"
 
-    # 按章节分割
-    chapter_pattern = r'^(.+)\n(?=-{3,})'
-    chapters = re.split(chapter_pattern, content, flags=re.MULTILINE)
+    # 3. 跳过纯 LaTeX 公式段落
+    # 检查段落是否主要由 LaTeX 公式组成（以 $ 或 \(\) 或 \[\] 包围）
+    latex_pattern = r'^\s*([$\[\]\\].*[$\[\]\\]|\\[a-zA-Z]+\{.*\}|\\[a-zA-Z]+\s)+\s*$'
+    if re.match(latex_pattern, text_stripped):
+        return True, "纯 LaTeX 公式"
 
-    current_chapter = "未命名章节"
-    for i in range(1, len(chapters), 2):
-        if i < len(chapters):
-            current_chapter = chapters[i].strip()
-            chapter_content = chapters[i + 1] if i + 1 < len(chapters) else ""
+    # 4. 跳过目录内容
+    if is_table_of_contents(text):
+        return True, "目录内容"
 
-            # 直接解析整个内容，提取所有原句和修改配对
-            section_mods = _parse_modifications_from_content(chapter_content, current_chapter)
-            modifications.extend(section_mods)
+    # 5. 跳过章节标题
+    if is_chapter_title(text):
+        return True, "章节标题"
 
-    return modifications
+    return False, ""
 
 
-def _parse_modifications_from_content(content: str, chapter_title: str) -> List[Dict]:
+def check_paragraph(paragraph_text: str) -> Tuple[str, str, List[Dict]]:
     """
-    从内容中解析修改建议（简化版：只提取原句和修改的配对）
+    检查单个段落，返回原文、修改后的内容和修改建议列表
 
     Args:
-        content: 章节内容
-        chapter_title: 章节标题
+        paragraph_text: 段落文本
 
     Returns:
-        List[Dict]: 修改建议列表，只包含章节、原句、修改
+        Tuple[str, str, List[Dict]]: (原文, 修改后的内容, 修改建议列表)
+            如果不需要修改，修改后的内容与原文相同，修改建议列表为空
     """
-    modifications = []
+    config = PROCESSOR_CONFIGS['grammar']
 
-    # 统一模式：直接匹配原句和修改的配对
-    # 匹配：- **原句**：xxx\n- **修改**：xxx 或 - **原句**：xxx\n- **修改建议**：xxx
-    # 需要跳过中间的 - **原因**：xxx 或其他内容
-    pattern = r'- \*\*原句\*\*[：:](.+?)(?=\n- \*\*(?:修改|修改建议)\*\*[：:])\n- \*\*(?:修改|修改建议)\*\*[：:](.+?)(?=\n- \*\*(?:原因|原句)\*\*[：:]|\n\d+\.|\n###|$|---)'
+    # 构建提示词
+    prompt = config['prompt_template'].format(content=paragraph_text)
 
-    matches = re.finditer(pattern, content, re.MULTILINE | re.DOTALL)
+    # 构建消息
+    messages = [config['role'], {'role': 'user', 'content': prompt}]
 
-    for match in matches:
-        original = match.group(1).strip()
-        corrected = match.group(2).strip()
+    # 调用 Ollama（流式显示）
+    result = chat_streaming(model=DEFAULT_MODEL, messages=messages).strip()
 
-        modifications.append({
-            'chapter_title': chapter_title,
-            'original': original,
-            'corrected': corrected
-        })
+    # 解析结果 - 新格式
+    corrected_text, modifications = _parse_modifications(result, paragraph_text)
 
-    return modifications
+    return paragraph_text, corrected_text, modifications
 
 
-def _find_text_in_para(para_text: str, original: str) -> tuple[bool, str, str]:
+def _parse_modifications(result: str, original_text: str) -> Tuple[str, List[Dict]]:
     """
-    在段落文本中查找原句，支持精确匹配和模糊匹配
+    从 Ollama 返回结果中解析修改后的文本和修改建议（新格式）
 
     Args:
-        para_text: 段落文本
-        original: 原句
+        result: Ollama 返回的完整结果
+        original_text: 原始段落文本
 
     Returns:
-        tuple: (是否找到, 实际匹配的文本, 匹配类型)
-            - 是否找到: True 或 False
-            - 实际匹配的文本: 匹配到的文本片段
-            - 匹配类型: 'exact' 精确匹配, 'stripped' 去标点匹配, 'no_dots' 去省略号匹配, 'fuzzy' 模糊匹配
+        Tuple[str, List[Dict]]: (修改后的文本, 修改建议列表)
+            修改建议列表每个包含:
+            - type: 错误类型（如：标点误用）
+            - original: 原句片段
+            - corrected: 修改后的片段
+            - reason: 修改原因
     """
-    # 1. 精确匹配
-    if original in para_text:
-        return True, original, 'exact'
+    # 检查是否未发现错误
+    if "本章内容质量很高，未发现错误。" in result:
+        return original_text, []
 
-    # 2. 去除首尾标点符号后匹配
-    original_stripped = original.strip('，。！？；：""''、·「」『』【】《》（）()[]{}')
-    if original_stripped != original and original_stripped in para_text:
-        return True, original_stripped, 'stripped'
-
-    # 3. 去除省略号后匹配
-    original_no_dots = original.replace('...', '').strip(' ，。！？；：""''、·「」『』【】《》（）()[]{}')
-    if original_no_dots in para_text:
-        return True, original_no_dots, 'no_dots'
-
-    # 4. 模糊匹配：查找原句中较长的连续子串
-    # 去除标点和空格后进行比较
-    punctuation = '，。！？；：""''、·「」『』【】《》（）()[]{}... '
-    original_clean = ''.join(c for c in original if c not in punctuation)
-    para_clean = ''.join(c for c in para_text if c not in punctuation)
-
-    # 查找至少15个字符的匹配子串
-    min_match_length = 15
-    if len(original_clean) >= min_match_length:
-        best_match = ''
-        best_pos = -1
-
-        # 在清理后的段落中查找最长的匹配子串
-        for i in range(len(original_clean) - min_match_length + 1):
-            for j in range(len(original_clean), i + min_match_length, -1):
-                substring = original_clean[i:j]
-                if substring in para_clean:
-                    if len(substring) > len(best_match):
-                        best_match = substring
-                        # 在原始段落中找到这个子串的位置
-                        pos = _find_original_position(para_text, para_clean, substring)
-                        best_pos = pos
-                    break
-            if best_match:
-                break
-
-        if best_match:
-            # 在原始段落中找到对应的文本片段
-            if best_pos >= 0:
-                matched_text = para_text[best_pos:best_pos + len(best_match)]
-                return True, matched_text, 'fuzzy'
-
-    return False, '', ''
-
-
-def _find_original_position(para_text: str, para_clean: str, clean_substring: str) -> int:
-    """
-    在原始段落中查找清理后的子串对应的位置
-
-    Args:
-        para_text: 原始段落文本
-        para_clean: 清理后的段落文本
-        clean_substring: 清理后的子串
-
-    Returns:
-        int: 在段落中的位置，-1 表示未找到
-    """
-    # 在清理后的段落中找到子串的位置
-    pos_in_clean = para_clean.find(clean_substring)
-    if pos_in_clean == -1:
-        return -1
-
-    # 将清理后的位置映射回原始段落
-    clean_count = 0
-    for i, char in enumerate(para_text):
-        if char not in '，。！？；：""''、·「」『』【】《》（）()[]{}... ':
-            if clean_count == pos_in_clean:
-                return i
-            clean_count += 1
-
-    return -1
-
-
-def apply_modifications_to_docx(input_docx: str, output_docx: str, modifications: List[Dict]) -> tuple[List[Dict], int]:
-    """
-    将修改建议应用到 DOCX 文件（保留格式）
-
-    Args:
-        input_docx: 输入 DOCX 文件路径
-        output_docx: 输出 DOCX 文件路径
-        modifications: 修改建议列表
-
-    Returns:
-        tuple: (处理结果列表, 成功应用的数量)
-            - 处理结果列表: 每个元素包含章节、原句、修改、匹配类型、状态
-            - 成功应用的数量: 整数
-    """
-    if not os.path.exists(input_docx):
-        print(f"[错误] 输入文件不存在：{input_docx}")
-        return [], 0
-
-    # 不再过滤，直接应用所有修改建议
-    if not modifications:
-        print("[信息] 没有需要应用的修改")
-        return [], 0
-
-    print(f"[信息] 正在处理 {len(modifications)} 条修改建议...")
-
-    # 加载文档
-    doc = Document(input_docx)
-
-    # 存储处理结果
-    results = []
-
-    # 遍历所有段落，查找并应用修改
-    for para in doc.paragraphs:
-        para_text = para.text
-        for mod in modifications:
-            if not mod.get('processed', False):
-                original = mod['original']
-                corrected = mod['corrected']
-
-                # 使用查找函数（支持模糊匹配）
-                found, matched_text, match_type = _find_text_in_para(para_text, original)
-
-                if found:
-                    # 执行替换
-                    _replace_text_in_para(para, matched_text, corrected)
-
-                    # 记录处理结果
-                    results.append({
-                        'chapter': mod['chapter_title'],
-                        'original': original,
-                        'corrected': corrected,
-                        'match_type': match_type,
-                        'status': '成功'
-                    })
-
-                    # 标记为已处理
-                    mod['processed'] = True
+    # 解析第一部分：修改后的文本
+    corrected_text = original_text
+    if "###MODIFIED_TEXT###" in result:
+        # 分割得到修改后的文本部分和修改说明部分
+        parts = result.split("###MODIFIED_TEXT###")
+        if len(parts) > 1:
+            # 提取修改后的文本（直到下一部分开始）
+            modified_part = parts[1].strip()
+            # 如果有修改说明部分，分割出来
+            if "**[" in modified_part:
+                lines = modified_part.split('\n')
+                # 找到第一个以 **[ 开头的行
+                for i, line in enumerate(lines):
+                    if line.strip().startswith('**['):
+                        corrected_text = '\n'.join(lines[:i]).strip()
+                        break
                 else:
-                    # 记录未找到的修改
-                    results.append({
-                        'chapter': mod['chapter_title'],
-                        'original': original,
-                        'corrected': corrected,
-                        'match_type': '未找到',
-                        'status': '失败'
-                    })
+                    # 没找到，整个都是修改后的文本
+                    corrected_text = modified_part
+            else:
+                corrected_text = modified_part
 
-                    # 标记为已处理（避免重复检查）
-                    mod['processed'] = True
+    # 解析第二部分：修改说明
+    modifications = []
+    lines = result.split('\n')
+    for line in lines:
+        line = line.strip()
+        # 匹配格式：**[错误类型]** 原句 -> 修改后（原因）
+        match = re.match(r'^\*\*\[([^\]]+)\]\*\*\s*(.+?)\s*->\s*(.+?)\s*\((.+)\)', line)
+        if match:
+            error_type = match.group(1).strip()
+            original = match.group(2).strip()
+            corrected = match.group(3).strip()
+            reason = match.group(4).strip()
 
-    # 保存修改后的文档
-    doc.save(output_docx)
+            modifications.append({
+                'type': error_type,
+                'original': original,
+                'corrected': corrected,
+                'reason': reason
+            })
 
-    # 输出处理结果总览
-    print(f"\n{'=' * 80}")
-    print(f"[处理结果总览]")
-    print(f"{'=' * 80}")
-
-    success_count = 0
-    fail_count = 0
-
-    for i, result in enumerate(results, 1):
-        status_icon = "✓" if result['status'] == '成功' else "✗"
-        print(f"{i}. {status_icon} [{result['chapter']}] - {result['match_type']}")
-        print(f"   原句: {result['original'][:60]}...")
-        print(f"   修改: {result['corrected'][:60]}...")
-
-        if result['status'] == '成功':
-            success_count += 1
-        else:
-            fail_count += 1
-        print(f"   {'-' * 80}")
-
-    print(f"{'=' * 80}")
-    print(f"[统计] 共处理 {len(results)} 条建议：成功 {success_count} 条，失败 {fail_count} 条")
-    print(f"[完成] 修改后的文档已保存到：{output_docx}")
-
-    return results, success_count
+    return corrected_text, modifications
 
 
-def _replace_text_in_para(para, old_text: str, new_text: str):
+def _replace_text_in_runs(para, old_text: str, new_text: str) -> bool:
     """
-    在段落中替换文本，保留原有格式
+    在段落的 runs 中替换文本（支持跨 run）
 
     Args:
         para: 段落对象
         old_text: 要替换的文本
         new_text: 替换后的文本
-    """
-    # 遍历段落中的所有 run
-    for run in para.runs:
-        if old_text in run.text:
-            # 在当前 run 中找到所有匹配位置
-            run.text = run.text.replace(old_text, new_text)
-            break
-
-    # 如果在单个 run 中没有找到，尝试跨 run 替换
-    if old_text not in ''.join(run.text for run in para.runs):
-        full_text = ''.join(run.text for run in para.runs)
-        if old_text in full_text:
-            # 找到替换的位置
-            start_pos = full_text.find(old_text)
-            end_pos = start_pos + len(old_text)
-
-            # 找到对应的 run 和位置
-            current_pos = 0
-            for i, run in enumerate(para.runs):
-                run_end = current_pos + len(run.text)
-
-                # 检查是否在当前 run 中
-                if start_pos < run_end:
-                    # 计算在当前 run 中的位置
-                    run_start = max(0, start_pos - current_pos)
-                    run_end_pos = min(len(run.text), end_pos - current_pos)
-
-                    # 替换文本
-                    before = run.text[:run_start]
-                    after = run.text[run_end_pos:]
-
-                    if end_pos > run_end:
-                        # 跨越多个 run，需要处理
-                        run.text = before + new_text
-
-                        # 清除后续 run 中的文本
-                        for j in range(i + 1, len(para.runs)):
-                            para.runs[j].text = ''
-                            end_pos -= len(para.runs[j].text)
-                    else:
-                        # 在单个 run 中
-                        run.text = before + new_text + after
-
-                    break
-
-                current_pos = run_end
-
-
-def generate_corrected_docx(grammar_file: str, input_docx: str, output_docx: str) -> tuple[List[Dict], int]:
-    """
-    根据语法检查结果生成修改后的 DOCX 文件（主入口函数）
-
-    Args:
-        grammar_file: 语法检查结果文件路径
-        input_docx: 输入 DOCX 文件路径
-        output_docx: 输出 DOCX 文件路径
 
     Returns:
-        tuple: (处理结果列表, 成功应用的数量)
+        bool: 是否成功替换
     """
-    print(f"[开始] 解析语法检查结果：{grammar_file}")
+    # 先尝试在单个 run 中替换
+    for run in para.runs:
+        if old_text in run.text:
+            run.text = run.text.replace(old_text, new_text)
+            return True
 
-    # 解析语法检查结果
-    modifications = parse_grammar_check_file(grammar_file)
+    # 如果单个 run 中没找到，尝试跨 run 替换
+    full_text = ''.join(run.text for run in para.runs)
+    if old_text not in full_text:
+        return False
+
+    # 找到替换的位置
+    start_pos = full_text.find(old_text)
+    end_pos = start_pos + len(old_text)
+
+    # 找到对应的 run 和位置
+    current_pos = 0
+    for i, run in enumerate(para.runs):
+        run_end = current_pos + len(run.text)
+
+        # 检查是否在当前 run 中
+        if start_pos < run_end:
+            # 计算在当前 run 中的位置
+            run_start = max(0, start_pos - current_pos)
+            run_end_pos = min(len(run.text), end_pos - current_pos)
+
+            # 替换文本
+            before = run.text[:run_start]
+            after = run.text[run_end_pos:]
+
+            if end_pos > run_end:
+                # 跨越多个 run，需要处理
+                run.text = before + new_text
+
+                # 清除后续 run 中的文本
+                for j in range(i + 1, len(para.runs)):
+                    para.runs[j].text = ''
+            else:
+                # 在单个 run 中
+                run.text = before + new_text + after
+
+            return True
+
+        current_pos = run_end
+
+    return False
+
+
+def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str | None = None) -> Tuple[int, int]:
+    """
+    逐段处理 DOCX 文件，应用语法检查修改
+
+    Args:
+        input_docx: 输入 DOCX 文件路径
+        output_docx: 输出 DOCX 文件路径
+        output_txt: 语法检查结果 TXT 文件路径（可选），保存完整的修改建议
+
+    Returns:
+        Tuple[int, int]: (处理的总段落数, 修改的段落数)
+    """
+    if not os.path.exists(input_docx):
+        print(f"[错误] 输入文件不存在：{input_docx}")
+        return 0, 0
+
+    print(f"[开始] 加载文档：{input_docx}")
+    doc = Document(input_docx)
+
+    total_paragraphs = len(doc.paragraphs)
+    modified_count = 0
+    skipped_count = 0
+
+    print(f"[信息] 共 {total_paragraphs} 个段落需要处理")
+
+    # 初始化 txt 文件（如果指定）
+    if output_txt:
+        save_to_txt("语法检查结果\n\n", output_txt, title="=" * 80, mode='w')
+
+    # 逐段处理
+    for idx, para in enumerate(doc.paragraphs, 1):
+        para_text = para.text.strip()
+
+        # 检查是否应该跳过该段落
+        should_skip, skip_reason = _should_skip_paragraph(para_text)
+        if should_skip:
+            skipped_count += 1
+            print(f"[跳过] 段落 {idx}/{total_paragraphs}：{skip_reason}")
+            continue
+
+        print(f"[检查] 段落 {idx}/{total_paragraphs}：{para_text[:50]}...", end='\r', flush=True)
+
+        # 检查段落
+        original, corrected, modifications = check_paragraph(para_text)
+
+        # 如果需要修改
+        if corrected != original:
+            print(f"\n[修改] 段落 {idx}/{total_paragraphs}")
+
+            # 应用修改到段落
+            success = _replace_text_in_runs(para, original, corrected)
+
+            if success:
+                modified_count += 1
+                # 不显示原文，只显示修改后内容
+                print(f"  {corrected}")
+            else:
+                print(f"  警告：无法自动应用修改（可能由于格式分布）")
+
+        # 每处理完一个段落，立即写入 txt 文件
+        if output_txt:
+            _save_modifications_to_txt(output_txt, idx, para_text, modifications)
+
+    # 保存修改后的文档
+    doc.save(output_docx)
+
+    # 完成 txt 文件
+    if output_txt:
+        summary = (
+            f"处理完成\n"
+            f"总段落数：{total_paragraphs}\n"
+            f"跳过空段落：{skipped_count}\n"
+            f"修改段落：{modified_count}\n"
+            f"保持不变：{total_paragraphs - skipped_count - modified_count}\n"
+        )
+        save_to_txt(summary, output_txt, title="=" * 80, mode='a')
+
+    print(f"\n{'=' * 80}")
+    print(f"[完成] 处理结果")
+    print(f"{'=' * 80}")
+    print(f"总段落数：{total_paragraphs}")
+    print(f"跳过空段落：{skipped_count}")
+    print(f"修改段落：{modified_count}")
+    print(f"保持不变：{total_paragraphs - skipped_count - modified_count}")
+    print(f"[保存] 修改后的文档：{output_docx}")
+    if output_txt:
+        print(f"[保存] 语法检查结果：{output_txt}")
+
+    return total_paragraphs, modified_count
+
+
+def _save_modifications_to_txt(txt_file: str, para_idx: int, para_text: str, modifications: List[Dict]):
+    """
+    将修改建议保存到 txt 文件
+
+    Args:
+        txt_file: txt 文件路径
+        para_idx: 段落索引
+        para_text: 原始段落文本
+        modifications: 修改建议列表
+    """
+    content = f"{'=' * 60}\n"
+    content += f"段落 {para_idx}\n"
+    content += f"{'=' * 60}\n"
+    content += f"原始内容：\n{para_text}\n\n"
 
     if not modifications:
-        print("[信息] 未发现任何修改建议")
-        return [], 0
+        content += "本章内容质量很高，未发现错误。\n"
+    else:
+        for i, mod in enumerate(modifications, 1):
+            content += f"**[{mod['type']}]** {mod['original']} -> {mod['corrected']}（{mod['reason']}）\n"
 
-    # 统计各章节的修改数量
-    chapter_stats = {}
-    for mod in modifications:
-        chapter = mod['chapter_title']
-        if chapter not in chapter_stats:
-            chapter_stats[chapter] = 0
-        chapter_stats[chapter] += 1
-
-    print(f"[统计] 发现 {len(modifications)} 条修改建议")
-    for chapter, count in chapter_stats.items():
-        print(f"  - {chapter}: {count} 条")
-
-    # 应用修改
-    results, success_count = apply_modifications_to_docx(
-        input_docx,
-        output_docx,
-        modifications
-    )
-
-    return results, success_count
+    save_to_txt(content, txt_file, title="", mode='a')
 
 
 __all__ = [
-    'parse_grammar_check_file',
-    'apply_modifications_to_docx',
-    'generate_corrected_docx',
+    'check_paragraph',
+    'process_docx_paragraphs',
 ]

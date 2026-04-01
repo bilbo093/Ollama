@@ -15,11 +15,11 @@ src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from ollama_processor import generate_and_save_chapter_summaries, generate_and_save_grammar_checks, TextProcessor
+from ollama_processor import generate_and_save_chapter_summaries, TextProcessor
 from file_io import read_file_content, validate_file_format, save_to_txt
 from config import PROCESSOR_CONFIGS
 from segmented_evaluator import three_stage_evaluation
-from docx_editor import generate_corrected_docx
+from docx_editor import process_docx_paragraphs
 
 
 def main():
@@ -38,14 +38,12 @@ def main():
     python main.py grammar -i input.docx
   语法检查并修改（指定语法检查文件）:
     python main.py grammar -i input.docx -o grammar.txt
-  语法检查并修改（指定输出 DOCX 文件）:
-    python main.py grammar -i input.docx -o output.docx
 
   说明：
+  - 逐段检查：从 DOCX 文件中逐段读取内容，直接检查并应用修改
   - 语法检查文件：使用 -o 指定 .txt 文件，或自动使用 input/{文件名}_grammar.txt
-  - 输出 DOCX 文件：使用 -o 指定 .docx 文件，或自动生成 {输入文件名}_fixed.docx
-  - 如果语法检查文件不存在，会自动生成
-  - 如果语法检查文件已存在，直接使用，跳过重新检查
+  - 输出 DOCX 文件：自动生成 {输入文件名}_fixed.docx，与输入文件同目录
+  - 无需匹配：直接将每段送入模型检查，返回原文和修改后的内容，完全避免匹配问题
         '''
     )
 
@@ -76,12 +74,12 @@ def main():
     evaluate_parser.add_argument('--overlap', type=int, default=3000,
                                 help='重叠字符数（默认：3000）')
 
-    # grammar 子命令（合并语法检查和修改功能）
+    # grammar 子命令（逐段检查并修改）
     grammar_parser = subparsers.add_parser('grammar', help='语法检查并修改 DOCX 文件')
     grammar_parser.add_argument('-i', '--input', type=str, required=True,
                                help='输入文件路径 (.docx)')
     grammar_parser.add_argument('-o', '--output', type=str,
-                               help='语法检查结果文件路径（.txt）或输出 DOCX 文件路径')
+                               help='语法检查结果文件路径（.txt）')
 
     args = parser.parse_args()
 
@@ -191,91 +189,38 @@ def main():
                 sys.exit(1)
 
             # 处理 -o 参数
-            grammar_check_file = None
-            output_docx_file = None
+            output_txt_file = None
 
             if args.output:
                 output_ext = os.path.splitext(args.output)[1].lower()
-                if output_ext == '.txt':
-                    # -o 指定的是语法检查文件
-                    grammar_check_file = args.output
-                elif output_ext == '.docx':
-                    # -o 指定的是输出 DOCX 文件
-                    output_docx_file = args.output
-                else:
-                    print(f"[错误] -o 参数必须是 .txt 或 .docx 格式：{args.output}")
+                if output_ext != '.txt':
+                    print(f"[错误] -o 参数必须是 .txt 格式：{args.output}")
                     sys.exit(1)
+                output_txt_file = args.output
 
             # 如果没有指定语法检查文件，自动推断
-            if not grammar_check_file:
+            if not output_txt_file:
                 base_name = os.path.splitext(os.path.basename(args.input))[0]
-                grammar_check_file = os.path.join('input', base_name + '_grammar.txt')
+                output_txt_file = os.path.join('input', base_name + '_grammar.txt')
 
-            # 检查语法检查文件是否存在
-            if not os.path.exists(grammar_check_file):
-                print(f"[信息] 语法检查文件不存在，开始生成：{grammar_check_file}")
-                print("=" * 60)
-                print("[阶段1] 执行语法检查")
-                print("=" * 60)
+            # 自动推断输出 DOCX 文件
+            input_dir = os.path.dirname(args.input)
+            base_name = os.path.splitext(os.path.basename(args.input))[0]
+            output_docx_file = os.path.join(input_dir, base_name + '_fixed.docx')
 
-                # 读取文件内容并生成语法检查
-                content = read_file_content(args.input)
-                generate_and_save_grammar_checks(content, grammar_check_file)
-                print(f"[完成] 语法检查结果已保存至：{grammar_check_file}")
-            else:
-                print(f"[信息] 检测到现有语法检查文件：{grammar_check_file}")
-                print(f"[选项] 请选择操作：")
-                print(f"  1. 直接使用现有语法检查文件（快速）")
-                print(f"  2. 重新生成语法检查（慢速）")
-
-                # 获取用户选择
-                while True:
-                    choice = input("请输入选择 [1/2, 默认: 1]: ").strip() or "1"
-                    if choice == "1":
-                        print(f"[信息] 使用现有语法检查文件")
-                        break
-                    elif choice == "2":
-                        print(f"[信息] 开始重新生成语法检查文件...")
-                        print("=" * 60)
-                        print("[阶段1] 执行语法检查")
-                        print("=" * 60)
-
-                        # 读取文件内容并生成语法检查
-                        content = read_file_content(args.input)
-                        generate_and_save_grammar_checks(content, grammar_check_file)
-                        print(f"[完成] 语法检查结果已保存至：{grammar_check_file}")
-                        break
-                    else:
-                        print(f"[错误] 无效选择，请输入 1 或 2")
-
-            # 如果没有指定输出 DOCX 文件，自动推断
-            if not output_docx_file:
-                # 在输入文件同目录生成 {原文件名}_fixed.docx
-                input_dir = os.path.dirname(args.input)
-                base_name = os.path.splitext(os.path.basename(args.input))[0]
-                output_docx_file = os.path.join(input_dir, base_name + '_fixed.docx')
-
-            # 验证输出文件格式
-            output_ext = os.path.splitext(output_docx_file)[1].lower()
-            if output_ext != '.docx':
-                print(f"[错误] 输出文件必须是 DOCX 格式：{output_docx_file}")
-                sys.exit(1)
-
-            print("\n" + "=" * 60)
-            print("[阶段2] 应用修改到 DOCX 文件")
-            print("=" * 60)
+            print("\n" + "=" * 80)
+            print("[任务] 逐段检查并修改 DOCX 文件")
+            print("=" * 80)
             print(f"[输入] 原始文档：{args.input}")
-            print(f"[输入] 语法检查：{grammar_check_file}")
+            print(f"[输出] 语法检查：{output_txt_file}")
             print(f"[输出] 修改文档：{output_docx_file}")
 
-            # 应用修改到文档
-            count = generate_corrected_docx(
-                grammar_check_file,
+            # 逐段处理文档
+            process_docx_paragraphs(
                 args.input,
-                output_docx_file
+                output_docx_file,
+                output_txt_file
             )
-
-            print(f"\n[完成] 处理完成，共处理 {count} 处修改")
 
     except Exception as e:
         print(f"[错误] {e}")

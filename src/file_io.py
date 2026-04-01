@@ -124,9 +124,8 @@ def save_to_txt(content: str, output_file: str, title: str = "学术风格摘要
     """
     with open(output_file, mode, encoding='utf-8') as f:
         f.write(f"{title}\n")
-        f.write("=" * 60 + "\n\n")
+        f.write("=" * 60 + "\n")
         f.write(content)
-        f.write("\n\n")
         f.write("=" * 60 + "\n")
         f.flush()  # 立即刷新到磁盘
 

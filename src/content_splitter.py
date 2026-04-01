@@ -177,6 +177,7 @@ def split_content_by_chapters(content: str) -> List[Dict[str, str]]:
 
     for idx, chapter in enumerate(toc_chapters):
         chapter_title = chapter['title']
+
         # 确定搜索起始位置：如果是第一个章节，从目录结束位置开始搜索；否则从上一个章节位置后搜索
         if idx == 0:
             search_start = max(0, toc_end)
@@ -223,17 +224,7 @@ def split_content_by_chapters(content: str) -> List[Dict[str, str]]:
             # 选择比上一个标题大的最小行号（由于search_start已确保，取第一个即可）
             pos = matched_positions[0]
 
-            # 检查是否遇到参考文献，让用户选择是否继续
-            if '参考文献' in chapter_title:
-                print(f"\n{'='*60}")
-                print(f"已检测到参考文献章节（行号：{pos}）")
-                choice = input("是否继续处理后续章节？(y/n): ").strip().lower()
-                if choice != 'y':
-                    print("用户选择停止，只处理到参考文献之前的章节")
-                    # 不添加参考文献，直接跳出循环
-                    break
-
-            # 添加章节位置
+            # 添加章节位置（不再在这里询问用户是否继续）
             chapter_positions.append({
                 'title': chapter_title,
                 'position': pos
