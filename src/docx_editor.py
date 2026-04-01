@@ -15,6 +15,30 @@ from file_io import save_to_txt
 from content_splitter import is_table_of_contents, is_chapter_title
 
 
+def is_references_section(text: str) -> bool:
+    """
+    判断是否是参考文献章节
+
+    Args:
+        text: 待判断的文本
+
+    Returns:
+        bool: 是否是参考文献章节
+    """
+    text = text.strip()
+    references_patterns = [
+        r'^参考文献',  # 参考文献
+        r'^参考文献\s*\[\d+\]',  # 参考文献 [1]
+        r'^References$',  # References
+        r'^References\s*\[\d+\]',  # References [1]
+        r'^BIBLIOGRAPHY',  # BIBLIOGRAPHY
+    ]
+    for pattern in references_patterns:
+        if re.match(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
 def _should_skip_paragraph(text: str) -> Tuple[bool, str]:
     """
     判断段落是否应该跳过
@@ -97,7 +121,12 @@ def _parse_modifications(result: str, original_text: str) -> Tuple[str, List[Dic
             - reason: 修改原因
     """
     # 检查是否未发现错误
-    if "本章内容质量很高，未发现错误。" in result:
+    if "本章内容质量很高，未发现错误。" in result or "本章内容质量很高，未发现明显的语法或标点错误。" in result:
+        return original_text, []
+
+    # 检查是否有 ###MODIFIED_TEXT### 分隔符
+    if "###MODIFIED_TEXT###" not in result:
+        # 没有分隔符，返回原文，不应用任何修改
         return original_text, []
 
     # 解析第一部分：修改后的文本
@@ -221,48 +250,42 @@ def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str |
         print(f"[错误] 输入文件不存在：{input_docx}")
         return 0, 0
 
-    print(f"[开始] 加载文档：{input_docx}")
     doc = Document(input_docx)
 
     total_paragraphs = len(doc.paragraphs)
     modified_count = 0
     skipped_count = 0
 
-    print(f"[信息] 共 {total_paragraphs} 个段落需要处理")
+    # 找到最后一个"参考文献"段落的位置
+    last_references_idx = -1
+    for idx, para in enumerate(doc.paragraphs):
+        if is_references_section(para.text.strip()):
+            last_references_idx = idx
+
+    # 确定处理的段落范围（参考文献段落之前）
+    process_until = last_references_idx if last_references_idx != -1 else total_paragraphs
 
     # 初始化 txt 文件（如果指定）
     if output_txt:
         save_to_txt("语法检查结果\n\n", output_txt, title="=" * 80, mode='w')
 
-    # 逐段处理
-    for idx, para in enumerate(doc.paragraphs, 1):
+    # 逐段处理（只处理参考文献之前的段落）
+    for idx, para in enumerate(doc.paragraphs[:process_until], 1):
         para_text = para.text.strip()
 
         # 检查是否应该跳过该段落
         should_skip, skip_reason = _should_skip_paragraph(para_text)
         if should_skip:
             skipped_count += 1
-            print(f"[跳过] 段落 {idx}/{total_paragraphs}：{skip_reason}")
             continue
-
-        print(f"[检查] 段落 {idx}/{total_paragraphs}：{para_text[:50]}...", end='\r', flush=True)
 
         # 检查段落
         original, corrected, modifications = check_paragraph(para_text)
 
-        # 如果需要修改
+        # 如果需要修改，直接应用，不输出提示
         if corrected != original:
-            print(f"\n[修改] 段落 {idx}/{total_paragraphs}")
-
-            # 应用修改到段落
-            success = _replace_text_in_runs(para, original, corrected)
-
-            if success:
-                modified_count += 1
-                # 不显示原文，只显示修改后内容
-                print(f"  {corrected}")
-            else:
-                print(f"  警告：无法自动应用修改（可能由于格式分布）")
+            _replace_text_in_runs(para, original, corrected)
+            modified_count += 1
 
         # 每处理完一个段落，立即写入 txt 文件
         if output_txt:
@@ -276,24 +299,20 @@ def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str |
         summary = (
             f"处理完成\n"
             f"总段落数：{total_paragraphs}\n"
-            f"跳过空段落：{skipped_count}\n"
+            f"处理段落：{process_until}\n"
+            f"跳过段落：{skipped_count}\n"
             f"修改段落：{modified_count}\n"
-            f"保持不变：{total_paragraphs - skipped_count - modified_count}\n"
+            f"保持不变：{process_until - skipped_count - modified_count}\n"
         )
         save_to_txt(summary, output_txt, title="=" * 80, mode='a')
 
-    print(f"\n{'=' * 80}")
-    print(f"[完成] 处理结果")
-    print(f"{'=' * 80}")
-    print(f"总段落数：{total_paragraphs}")
-    print(f"跳过空段落：{skipped_count}")
-    print(f"修改段落：{modified_count}")
-    print(f"保持不变：{total_paragraphs - skipped_count - modified_count}")
-    print(f"[保存] 修改后的文档：{output_docx}")
+    # 处理完成，输出结果
+    print(f"处理完成！共处理 {process_until} 个段落，修改 {modified_count} 个")
+    print(f"保存: {output_docx}")
     if output_txt:
-        print(f"[保存] 语法检查结果：{output_txt}")
+        print(f"结果: {output_txt}")
 
-    return total_paragraphs, modified_count
+    return process_until, modified_count
 
 
 def _save_modifications_to_txt(txt_file: str, para_idx: int, para_text: str, modifications: List[Dict]):

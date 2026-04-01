@@ -5,11 +5,11 @@
 import os
 
 # ==================== 模型配置 ====================
-DEFAULT_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:9b')
+DEFAULT_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:4b')
 DEFAULT_THINK = False
 
 # ==================== 流式输出配置 ====================
-STREAM_BUFFER_SIZE = 70  # 缓冲区大小（字符数）
+STREAM_BUFFER_SIZE = 30  # 缓冲区大小（字符数），降低以实现更流畅的流式输出
 
 # ==================== 角色和消息配置 ====================
 

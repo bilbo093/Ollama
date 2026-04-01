@@ -48,7 +48,9 @@ def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK) -> s
 
         # 循环结束后，如果缓冲区里还有剩余的内容，则全部打印出来
         if buffer:
-            print(f"\r[完成] 分析完成,共生成 {char_count} 字符{' ' * 50}")
+            # 打印剩余内容（不换行）
+            display_text = buffer.replace('\n', ' ')
+            print(display_text[-(50 if len(display_text) > 50 else len(display_text)):], end='', flush=True)
 
         return full_content
     except Exception as e:
