@@ -19,7 +19,7 @@ from ollama_processor import generate_and_save_chapter_summaries, TextProcessor
 from file_io import read_file_content, validate_file_format, save_to_txt
 from config import PROCESSOR_CONFIGS
 from segmented_evaluator import three_stage_evaluation
-from docx_editor import process_docx_paragraphs, process_docx_from_txt
+from docx_editor import process_docx, apply_txt_to_docx
 
 
 def main():
@@ -203,11 +203,6 @@ def main():
                 base_name = os.path.splitext(os.path.basename(args.input))[0]
                 output_txt_file = os.path.join('input', base_name + '_grammar.txt')
 
-            # 自动推断输出 DOCX 文件
-            input_dir = os.path.dirname(args.input)
-            base_name = os.path.splitext(os.path.basename(args.input))[0]
-            output_docx_file = os.path.join(input_dir, base_name + '_fixed.docx')
-
             # 检查语法检查 TXT 文件是否已存在
             use_existing_txt = False
             if os.path.exists(output_txt_file):
@@ -241,21 +236,18 @@ def main():
             print("=" * 80)
             print(f"[输入] 原始文档：{args.input}")
             print(f"[输出] 语法检查：{output_txt_file}")
-            print(f"[输出] 修改文档：{output_docx_file}")
 
             # 处理文档
             if use_existing_txt:
-                # 从 TXT 文件解析并生成 DOCX
-                process_docx_from_txt(
+                # 从 TXT 文件解析并生成 DOCX（output_docx 在函数内部自动推断）
+                apply_txt_to_docx(
                     args.input,
-                    output_docx_file,
                     output_txt_file
                 )
             else:
-                # 逐段处理文档
-                process_docx_paragraphs(
+                # 逐段处理文档（output_docx 在函数内部自动推断）
+                process_docx(
                     args.input,
-                    output_docx_file,
                     output_txt_file
                 )
 
