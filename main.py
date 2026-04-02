@@ -19,7 +19,7 @@ from ollama_processor import generate_and_save_chapter_summaries, TextProcessor
 from file_io import read_file_content, validate_file_format, save_to_txt
 from config import PROCESSOR_CONFIGS
 from segmented_evaluator import three_stage_evaluation
-from docx_editor import process_docx_paragraphs
+from docx_editor import process_docx_paragraphs, process_docx_from_txt
 
 
 def main():
@@ -208,19 +208,56 @@ def main():
             base_name = os.path.splitext(os.path.basename(args.input))[0]
             output_docx_file = os.path.join(input_dir, base_name + '_fixed.docx')
 
+            # 检查语法检查 TXT 文件是否已存在
+            use_existing_txt = False
+            if os.path.exists(output_txt_file):
+                print("\n" + "=" * 80)
+                print(f"[发现] 语法检查文件已存在：{output_txt_file}")
+                print("=" * 80)
+                print("\n检测到该文档的语法检查结果文件已存在，请选择处理方式：")
+                print("1. 使用现有的 TXT 文件生成 DOCX（跳过 Ollama 检查）")
+                print("2. 重新进行语法检查（覆盖现有的 TXT 文件）")
+                print("3. 取消操作")
+                
+                while True:
+                    choice = input("\n请输入选项 (1/2/3): ").strip()
+                    if choice == '1':
+                        use_existing_txt = True
+                        break
+                    elif choice == '2':
+                        use_existing_txt = False
+                        break
+                    elif choice == '3':
+                        print("[取消] 操作已取消")
+                        sys.exit(0)
+                    else:
+                        print("[错误] 无效选项，请重新输入")
+
             print("\n" + "=" * 80)
-            print("[任务] 逐段检查并修改 DOCX 文件")
+            if use_existing_txt:
+                print("[任务] 从 TXT 文件生成 DOCX")
+            else:
+                print("[任务] 逐段检查并修改 DOCX 文件")
             print("=" * 80)
             print(f"[输入] 原始文档：{args.input}")
             print(f"[输出] 语法检查：{output_txt_file}")
             print(f"[输出] 修改文档：{output_docx_file}")
 
-            # 逐段处理文档
-            process_docx_paragraphs(
-                args.input,
-                output_docx_file,
-                output_txt_file
-            )
+            # 处理文档
+            if use_existing_txt:
+                # 从 TXT 文件解析并生成 DOCX
+                process_docx_from_txt(
+                    args.input,
+                    output_docx_file,
+                    output_txt_file
+                )
+            else:
+                # 逐段处理文档
+                process_docx_paragraphs(
+                    args.input,
+                    output_docx_file,
+                    output_txt_file
+                )
 
     except Exception as e:
         print(f"[错误] {e}")

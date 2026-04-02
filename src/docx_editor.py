@@ -7,7 +7,7 @@ DOCX 文件编辑器
 
 import os
 import re
-from typing import Tuple, List, Dict
+from typing import Tuple
 from docx import Document
 from ollama_processor import chat_streaming
 from config import DEFAULT_MODEL, PROCESSOR_CONFIGS
@@ -39,7 +39,7 @@ def is_references_section(text: str) -> bool:
     return False
 
 
-def _should_skip_paragraph(text: str) -> Tuple[bool, str]:
+def _should_skip_paragraph(text: str) -> bool:
     """
     判断段落是否应该跳过
 
@@ -47,45 +47,45 @@ def _should_skip_paragraph(text: str) -> Tuple[bool, str]:
         text: 段落文本
 
     Returns:
-        Tuple[bool, str]: (是否跳过, 跳过原因)
+        bool: 是否跳过
     """
     text_stripped = text.strip()
 
     # 1. 跳过空段落
     if not text_stripped:
-        return True, "空段落"
+        return True
 
     # 2. 跳过过短的段落（少于50个字符）
     if len(text_stripped) < 50:
-        return True, "段落过短"
+        return True
 
     # 3. 跳过纯 LaTeX 公式段落
     # 检查段落是否主要由 LaTeX 公式组成（以 $ 或 \(\) 或 \[\] 包围）
     latex_pattern = r'^\s*([$\[\]\\].*[$\[\]\\]|\\[a-zA-Z]+\{.*\}|\\[a-zA-Z]+\s)+\s*$'
     if re.match(latex_pattern, text_stripped):
-        return True, "纯 LaTeX 公式"
+        return True
 
     # 4. 跳过目录内容
     if is_table_of_contents(text):
-        return True, "目录内容"
+        return True
 
     # 5. 跳过章节标题
     if is_chapter_title(text):
-        return True, "章节标题"
+        return True
 
-    return False, ""
+    return False
 
 
-def check_paragraph(paragraph_text: str) -> Tuple[str, str, List[Dict]]:
+def check_paragraph(paragraph_text: str) -> Tuple[str, str]:
     """
-    检查单个段落，返回原文、修改后的内容和修改建议列表
+    检查单个段落,返回 Ollama 的原始输出
+    复读检测和安全阈值由 Ollama 客户端自动处理
 
     Args:
         paragraph_text: 段落文本
 
     Returns:
-        Tuple[str, str, List[Dict]]: (原文, 修改后的内容, 修改建议列表)
-            如果不需要修改，修改后的内容与原文相同，修改建议列表为空
+        Tuple[str, str]: (Ollama 原始输出, 段落文本)
     """
     config = PROCESSOR_CONFIGS['grammar']
 
@@ -95,144 +95,70 @@ def check_paragraph(paragraph_text: str) -> Tuple[str, str, List[Dict]]:
     # 构建消息
     messages = [config['role'], {'role': 'user', 'content': prompt}]
 
-    # 调用 Ollama（流式显示）
-    result = chat_streaming(model=DEFAULT_MODEL, messages=messages).strip()
+    # 调用 Ollama(流式显示),复读检测由客户端自动处理
+    result = chat_streaming(
+        model=DEFAULT_MODEL,
+        messages=messages
+    ).strip()
 
-    # 解析结果 - 新格式
-    corrected_text, modifications = _parse_modifications(result, paragraph_text)
-
-    return paragraph_text, corrected_text, modifications
+    return result, paragraph_text
 
 
-def _parse_modifications(result: str, original_text: str) -> Tuple[str, List[Dict]]:
+def _parse_modified_text_from_ollama(ollama_result: str) -> str:
     """
-    从 Ollama 返回结果中解析修改后的文本和修改建议（新格式）
+    从 Ollama 输出中解析修改后的文本
+
+    Ollama 返回格式(由 GRAMMAR_CHECKER_PROMPT 定义):
+    #### 第一部分：修改后的文本
+    ###MODIFIED_TEXT###
+    {修改后的文本内容}
+
+    #### 第二部分：修改说明
+    ###MODIFIED_DESCRIPTION###
+    {修改说明}
 
     Args:
-        result: Ollama 返回的完整结果
-        original_text: 原始段落文本
+        ollama_result: Ollama 返回的完整结果
 
     Returns:
-        Tuple[str, List[Dict]]: (修改后的文本, 修改建议列表)
-            修改建议列表每个包含:
-            - type: 错误类型（如：标点误用）
-            - original: 原句片段
-            - corrected: 修改后的片段
-            - reason: 修改原因
+        str: 修改后的文本，如果没有修改则返回空字符串
     """
-    # 检查是否未发现错误
-    if "本章内容质量很高，未发现错误。" in result or "本章内容质量很高，未发现明显的语法或标点错误。" in result:
-        return original_text, []
+    if not ollama_result:
+        return ""
 
     # 检查是否有 ###MODIFIED_TEXT### 分隔符
-    if "###MODIFIED_TEXT###" not in result:
-        # 没有分隔符，返回原文，不应用任何修改
-        return original_text, []
+    if "###MODIFIED_TEXT###" not in ollama_result:
+        return ""
 
-    # 解析第一部分：修改后的文本
-    corrected_text = original_text
-    if "###MODIFIED_TEXT###" in result:
-        # 分割得到修改后的文本部分和修改说明部分
-        parts = result.split("###MODIFIED_TEXT###")
-        if len(parts) > 1:
-            # 提取修改后的文本（直到下一部分开始）
-            modified_part = parts[1].strip()
-            # 如果有修改说明部分，分割出来
-            if "**[" in modified_part:
-                lines = modified_part.split('\n')
-                # 找到第一个以 **[ 开头的行
-                for i, line in enumerate(lines):
-                    if line.strip().startswith('**['):
-                        corrected_text = '\n'.join(lines[:i]).strip()
-                        break
-                else:
-                    # 没找到，整个都是修改后的文本
-                    corrected_text = modified_part
-            else:
-                corrected_text = modified_part
+    # 提取 MODIFIED_TEXT 之后的第一段内容
+    parts = ollama_result.split("###MODIFIED_TEXT###")
+    if len(parts) <= 1:
+        return ""
 
-    # 解析第二部分：修改说明
-    modifications = []
-    lines = result.split('\n')
+    modified_part = parts[1].strip()
+
+    # 按换行符分割，取第一个非空段落
+    lines = modified_part.split('\n')
     for line in lines:
-        line = line.strip()
-        # 匹配格式：**[错误类型]** 原句 -> 修改后（原因）
-        match = re.match(r'^\*\*\[([^\]]+)\]\*\*\s*(.+?)\s*->\s*(.+?)\s*\((.+)\)', line)
-        if match:
-            error_type = match.group(1).strip()
-            original = match.group(2).strip()
-            corrected = match.group(3).strip()
-            reason = match.group(4).strip()
+        if line.strip():
+            return line.strip()
 
-            modifications.append({
-                'type': error_type,
-                'original': original,
-                'corrected': corrected,
-                'reason': reason
-            })
-
-    return corrected_text, modifications
+    return ""
 
 
-def _replace_text_in_runs(para, old_text: str, new_text: str) -> bool:
+def _apply_reference_superscript(text: str) -> str:
     """
-    在段落的 runs 中替换文本（支持跨 run）
+    识别文本中的参考文献标记 [X], [1], [12] 等
+    返回纯文本内容，标记位置用于后续应用上标格式
 
     Args:
-        para: 段落对象
-        old_text: 要替换的文本
-        new_text: 替换后的文本
+        text: 原始文本
 
     Returns:
-        bool: 是否成功替换
+        str: 纯文本内容（不包含格式）
     """
-    # 先尝试在单个 run 中替换
-    for run in para.runs:
-        if old_text in run.text:
-            run.text = run.text.replace(old_text, new_text)
-            return True
-
-    # 如果单个 run 中没找到，尝试跨 run 替换
-    full_text = ''.join(run.text for run in para.runs)
-    if old_text not in full_text:
-        return False
-
-    # 找到替换的位置
-    start_pos = full_text.find(old_text)
-    end_pos = start_pos + len(old_text)
-
-    # 找到对应的 run 和位置
-    current_pos = 0
-    for i, run in enumerate(para.runs):
-        run_end = current_pos + len(run.text)
-
-        # 检查是否在当前 run 中
-        if start_pos < run_end:
-            # 计算在当前 run 中的位置
-            run_start = max(0, start_pos - current_pos)
-            run_end_pos = min(len(run.text), end_pos - current_pos)
-
-            # 替换文本
-            before = run.text[:run_start]
-            after = run.text[run_end_pos:]
-
-            if end_pos > run_end:
-                # 跨越多个 run，需要处理
-                run.text = before + new_text
-
-                # 清除后续 run 中的文本
-                for j in range(i + 1, len(para.runs)):
-                    para.runs[j].text = ''
-            else:
-                # 在单个 run 中
-                run.text = before + new_text + after
-
-            return True
-
-        current_pos = run_end
-
-    return False
-
+    # 直接返回纯文本，标记在写入 DOCX 时处理
+    return text
 
 def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str | None = None) -> Tuple[int, int]:
     """
@@ -253,7 +179,6 @@ def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str |
     doc = Document(input_docx)
 
     total_paragraphs = len(doc.paragraphs)
-    modified_count = 0
     skipped_count = 0
 
     # 找到最后一个"参考文献"段落的位置
@@ -267,79 +192,238 @@ def process_docx_paragraphs(input_docx: str, output_docx: str, output_txt: str |
 
     # 初始化 txt 文件（如果指定）
     if output_txt:
-        save_to_txt("语法检查结果\n\n", output_txt, title="=" * 80, mode='w')
+        save_to_txt("", output_txt, title="", mode='w')
 
-    # 逐段处理（只处理参考文献之前的段落）
+    modified_count = 0
+
+    # 逐段检查并立即应用修改
     for idx, para in enumerate(doc.paragraphs[:process_until], 1):
         para_text = para.text.strip()
 
         # 检查是否应该跳过该段落
-        should_skip, skip_reason = _should_skip_paragraph(para_text)
-        if should_skip:
+        if _should_skip_paragraph(para_text):
             skipped_count += 1
             continue
 
-        # 检查段落
-        original, corrected, modifications = check_paragraph(para_text)
+        # 检查段落,获取 Ollama 输出(复读检测由客户端自动处理)
+        print(f"\n[段落 {idx}] 开始检查...")
+        ollama_result, original = check_paragraph(para_text)
 
-        # 如果需要修改，直接应用，不输出提示
-        if corrected != original:
-            _replace_text_in_runs(para, original, corrected)
+        # 保存到 txt 文件(只添加分隔线格式)
+        if output_txt and ollama_result:
+            _save_modifications_to_txt(output_txt, idx, original, ollama_result)
+
+        # 直接从 Ollama 输出解析修改后的文本
+        corrected_text = _parse_modified_text_from_ollama(ollama_result)
+        
+        if corrected_text:
+            # 直接替换段落文本，参考文献标记会自动设置为上标
+            _replace_paragraph_text_with_refs(para, corrected_text)
             modified_count += 1
-
-        # 每处理完一个段落，立即写入 txt 文件
-        if output_txt:
-            _save_modifications_to_txt(output_txt, idx, para_text, modifications)
+            print(f"[修改] 段落 {idx} 替换成功")
 
     # 保存修改后的文档
     doc.save(output_docx)
+
+    # 计算 处理的段落数
+    processed_count = process_until - skipped_count
 
     # 完成 txt 文件
     if output_txt:
         summary = (
             f"处理完成\n"
             f"总段落数：{total_paragraphs}\n"
-            f"处理段落：{process_until}\n"
+            f"处理段落：{processed_count}\n"
             f"跳过段落：{skipped_count}\n"
             f"修改段落：{modified_count}\n"
-            f"保持不变：{process_until - skipped_count - modified_count}\n"
+            f"保持不变：{processed_count - modified_count}\n"
         )
         save_to_txt(summary, output_txt, title="=" * 80, mode='a')
 
     # 处理完成，输出结果
-    print(f"处理完成！共处理 {process_until} 个段落，修改 {modified_count} 个")
+    print(f"处理完成！共处理 {processed_count} 个段落，修改 {modified_count} 个")
     print(f"保存: {output_docx}")
     if output_txt:
         print(f"结果: {output_txt}")
 
-    return process_until, modified_count
+    return processed_count, modified_count
 
 
-def _save_modifications_to_txt(txt_file: str, para_idx: int, para_text: str, modifications: List[Dict]):
+def _save_modifications_to_txt(txt_file: str, para_idx: int, para_text: str, ollama_result: str):
     """
-    将修改建议保存到 txt 文件
+    将修改建议保存到 txt 文件（只添加格式化分隔线）
 
     Args:
         txt_file: txt 文件路径
         para_idx: 段落索引
         para_text: 原始段落文本
-        modifications: 修改建议列表
+        ollama_result: Ollama 的原始输出
     """
+    # 格式化内容，只添加分隔线
     content = f"{'=' * 60}\n"
     content += f"段落 {para_idx}\n"
     content += f"{'=' * 60}\n"
     content += f"原始内容：\n{para_text}\n\n"
+    content += f"Ollama 输出：\n{ollama_result}\n\n"
+    
+    # 写入文件
+    with open(txt_file, 'a', encoding='utf-8') as f:
+        f.write(content)
 
+
+def _parse_txt_paragraphs(txt_file: str) -> dict:
+    """
+    从 TXT 文件中解析段落修改记录
+    
+    TXT 格式(由 _save_modifications_to_txt 写入):
+    ============================================================
+    段落 N
+    ============================================================
+    原始内容：
+    {原始段落文本}
+    
+    Ollama 输出：
+    {Ollama 完整返回内容}
+    
+    Ollama 返回格式(由 GRAMMAR_CHECKER_PROMPT 定义):
+    #### 第一部分：修改后的文本
+    ###MODIFIED_TEXT###
+    {修改后的文本内容}
+    
+    #### 第二部分：修改说明
+    ###MODIFIED_DESCRIPTION###
+    {修改说明}
+
+    Args:
+        txt_file: TXT 文件路径
+
+    Returns:
+        dict: 段落索引到修改后文本的映射 {para_idx: modified_text}
+    """
+    if not os.path.exists(txt_file):
+        return {}
+
+    modifications = {}
+    import re
+    
+    with open(txt_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # 使用正则表达式匹配每个段落块
+    # 模式: 60个= + 换行 + "段落 N" + 换行 + 60个= + ... + "Ollama 输出:" + ... + (到下一个段落或文件结尾)
+    para_pattern = re.compile(
+        r'={60}\s*\n段落\s+(\d+)\s*\n={60}\s*\n'
+        r'原始内容：.*?\n\n'
+        r'Ollama\s*输出：(.*?)(?=\n={60}\s*\n段落\s+\d+\s*\n={60}|\Z)',
+        re.DOTALL
+    )
+    
+    matches = para_pattern.finditer(content)
+    
+    for match in matches:
+        para_idx = int(match.group(1))
+        ollama_output = match.group(2).strip()
+        
+        # 从 Ollama 输出中解析修改后的文本
+        modified_text = _parse_modified_text_from_ollama(ollama_output)
+        
+        if modified_text:
+            modifications[para_idx] = modified_text
+    
+    return modifications
+
+
+def process_docx_from_txt(input_docx: str, output_docx: str, txt_file: str) -> Tuple[int, int]:
+    """
+    从 TXT 文件解析修改记录并应用到 DOCX 文件
+    直接按段落序号替换,无需匹配
+
+    Args:
+        input_docx: 输入 DOCX 文件路径
+        output_docx: 输出 DOCX 文件路径
+        txt_file: TXT 文件路径（包含修改记录）
+
+    Returns:
+        Tuple[int, int]: (处理的总段落数, 修改的段落数)
+    """
+    if not os.path.exists(txt_file):
+        print(f"[错误] TXT 文件不存在：{txt_file}")
+        return 0, 0
+    
+    # 解析 TXT 文件中的修改记录
+    modifications = _parse_txt_paragraphs(txt_file)
+    
     if not modifications:
-        content += "本章内容质量很高，未发现错误。\n"
-    else:
-        for i, mod in enumerate(modifications, 1):
-            content += f"**[{mod['type']}]** {mod['original']} -> {mod['corrected']}（{mod['reason']}）\n"
+        print(f"[错误] TXT 文件中未找到任何修改记录：{txt_file}")
+        return 0, 0
+    
+    print(f"[信息] 从 TXT 文件中解析到 {len(modifications)} 个段落修改记录")
+    
+    # 加载 DOCX 文件
+    doc = Document(input_docx)
+    modified_count = 0
+    
+    # 应用修改 - 直接按段落序号替换
+    for idx, para in enumerate(doc.paragraphs, 1):
+        if idx in modifications:
+            # 获取修改后的文本
+            modified_text = modifications[idx]
 
-    save_to_txt(content, txt_file, title="", mode='a')
+            # 直接替换段落，参考文献标记会自动设置为上标
+            _replace_paragraph_text_with_refs(para, modified_text)
+            modified_count += 1
+            print(f"[修改] 段落 {idx} 替换成功")
+    
+    # 保存修改后的文档
+    doc.save(output_docx)
+    
+    print(f"处理完成！从 TXT 文件应用了 {modified_count} 个段落修改")
+    print(f"保存: {output_docx}")
+    
+    return len(modifications), modified_count
+
+
+def _replace_paragraph_text_with_refs(para, text: str):
+    """
+    替换段落文本，并将参考文献标记 [X] 设置为上标格式
+    写入前删除文内的空格
+
+    Args:
+        para: 段落对象
+        text: 新的文本内容，可能包含 [1], [2] 等参考文献标记
+    """
+    import re
+
+    # 删除文内空格（但保留中英文之间的分隔空格）
+    # 这里删除所有空格，因为中文写作不需要空格
+    text = re.sub(r' ', '', text)
+
+    # 清空所有 run
+    for run in para.runs:
+        run.text = ''
+
+    # 使用正则表达式分割文本，分离参考文献标记
+    # 匹配 [数字] 格式的参考文献标记
+    pattern = r'(\[\d+\])'
+    parts = re.split(pattern, text)
+
+    # 遍历分割结果，创建多个 run
+    for part in parts:
+        if not part:  # 跳过空字符串
+            continue
+
+        run = para.add_run()
+        run.text = part
+
+        # 如果是参考文献标记，设置为上标
+        if re.match(r'^\[\d+\]$', part):
+            run.font.superscript = True
 
 
 __all__ = [
     'check_paragraph',
     'process_docx_paragraphs',
+    'process_docx_from_txt',
+    '_parse_modified_text_from_ollama',
+    '_replace_paragraph_text_with_refs',
 ]

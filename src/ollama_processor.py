@@ -6,6 +6,7 @@
 """
 
 from ollama import chat
+import difflib
 from config import (
     DEFAULT_MODEL, DEFAULT_THINK, STREAM_BUFFER_SIZE,
     PROCESSOR_CONFIGS
@@ -16,6 +17,7 @@ from content_splitter import split_content_by_chapters
 def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK) -> str:
     """
     流式获取内容并使用缓冲区方式显示
+    内置复读检测和安全阈值保护,自动处理复读场景
 
     Args:
         model: Ollama 模型名称
@@ -25,10 +27,46 @@ def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK) -> s
     Returns:
         完整的响应内容
     """
+    # 提取输入长度
+    input_length = _get_input_length(messages)
+    safety_threshold = max(input_length * 20, 2000) if input_length > 0 else 0
+
+    # 第一次尝试:长度阈值检测
+    result = _stream_chat(model, messages, think, safety_threshold, use_similarity=False)
+
+    # 如果第一次失败(输出过长),重试使用相似度检测
+    if safety_threshold > 0 and len(result) >= safety_threshold:
+        print(f"\n[重试] 检测到输出过长,使用相似度检测重新生成...")
+        result = _stream_chat(model, messages, think, safety_threshold, use_similarity=True)
+
+    return result
+
+
+def _get_input_length(messages: list) -> int:
+    """从 messages 中提取用户输入的长度"""
+    return sum(len(msg.get('content', '')) for msg in messages if msg.get('role') == 'user')
+
+
+def _stream_chat(model: str, messages: list, think: bool, safety_threshold: int, use_similarity: bool) -> str:
+    """
+    流式聊天(带复读检测)
+
+    Args:
+        model: 模型名称
+        messages: 消息列表
+        think: 思考模式
+        safety_threshold: 长度阈值
+        use_similarity: 是否使用相似度检测
+
+    Returns:
+        完整响应
+    """
     try:
         full_content = ""
         buffer = ""
         char_count = 0
+        last_buffer = ""
+        repeat_count = 0
 
         for chunk in chat(model=model, messages=messages, stream=True, think=think):
             content = chunk['message']['content']
@@ -36,21 +74,33 @@ def chat_streaming(model: str, messages: list, think: bool = DEFAULT_THINK) -> s
             full_content += content
             char_count += len(content)
 
-            # 检查缓冲区中的字符数量是否达到了配置的大小
-            while len(buffer) >= STREAM_BUFFER_SIZE:
-                # 提取前 STREAM_BUFFER_SIZE 个字符进行打印
-                to_print = buffer[:STREAM_BUFFER_SIZE]
-                display_text = to_print.replace('\n', ' ')
-                print(f"\r[进度] 已生成 {char_count} 字符: {display_text[-50:]}", end='', flush=True)
+            # 相似度复读检测(第二次尝试使用)
+            if use_similarity and len(buffer) > 50:
+                similarity = difflib.SequenceMatcher(None, buffer[-200:], last_buffer).ratio()
+                if similarity >= 0.6:
+                    repeat_count += 1
+                    print(f"\r[复读检测] 相似度: {similarity:.2f}, 次数: {repeat_count}/5", end='', flush=True)
+                    if repeat_count >= 5:
+                        print(f"\n[警告] 检测到模型复读,已中断")
+                        break
+                else:
+                    repeat_count = 0
+                last_buffer = buffer[-200:]
 
-                # 更新缓冲区，保留剩余未打印的字符
+            # 长度阈值检测(第一次尝试使用)
+            elif safety_threshold > 0 and len(full_content) > safety_threshold:
+                print(f"\n[警告] 检测到输出过长,已中断")
+                break
+
+            # 缓冲输出
+            while len(buffer) >= STREAM_BUFFER_SIZE:
+                to_print = buffer[:STREAM_BUFFER_SIZE]
+                print(f"\r[进度] {char_count} 字符: {to_print[-50:].replace(chr(10), ' ')}", end='', flush=True)
                 buffer = buffer[STREAM_BUFFER_SIZE:]
 
-        # 循环结束后，如果缓冲区里还有剩余的内容，则全部打印出来
+        # 输出剩余内容
         if buffer:
-            # 打印剩余内容（不换行）
-            display_text = buffer.replace('\n', ' ')
-            print(display_text[-(50 if len(display_text) > 50 else len(display_text)):], end='', flush=True)
+            print(buffer[-50:].replace(chr(10), ' '), end='', flush=True)
 
         return full_content
     except Exception as e:
