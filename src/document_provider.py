@@ -8,6 +8,7 @@
 import os
 import re
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class DocumentProvider(ABC):
@@ -25,7 +26,7 @@ class DocumentProvider(ABC):
         ...
 
     @abstractmethod
-    def apply_and_save(self, modifications: dict[int, str], output_path: str | None = None) -> int:
+    def apply_and_save(self, modifications: dict[int, str], output_path: Optional[str] = None) -> int:
         """
         应用修改并保存文件
 
@@ -62,7 +63,7 @@ class TxtDocumentProvider(DocumentProvider):
                 continue
         raise RuntimeError(f"[错误] 无法解码文件：{self.file_path}")
 
-    def apply_and_save(self, modifications: dict[int, str], output_path: str | None = None) -> int:
+    def apply_and_save(self, modifications: dict[int, str], output_path: Optional[str] = None) -> int:
         if not modifications:
             return 0
 
@@ -99,7 +100,7 @@ class DocxDocumentProvider(DocumentProvider):
     def read_paragraphs(self) -> list[str]:
         return [p.text.strip() for p in self._doc.paragraphs]
 
-    def apply_and_save(self, modifications: dict[int, str], output_path: str | None = None) -> int:
+    def apply_and_save(self, modifications: dict[int, str], output_path: Optional[str] = None) -> int:
         if not modifications:
             return 0
 

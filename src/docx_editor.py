@@ -10,7 +10,7 @@
 
 import os
 import re
-from typing import Tuple
+from typing import Tuple, Optional
 from ollama_processor import chat
 from config import PROCESSOR_CONFIGS
 from file_io import save_to_txt
@@ -210,7 +210,7 @@ def _parse_txt(txt_file: str) -> dict:
     return modifications
 
 
-def process_document(provider: DocumentProvider, output_txt: str | None = None) -> Tuple[int, int]:
+def process_document(provider: DocumentProvider, output_txt: Optional[str] = None) -> Tuple[int, int]:
     """
     基于 DocumentProvider 的通用语法检查流程，支持任意文档格式
 

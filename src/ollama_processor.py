@@ -8,6 +8,7 @@
 import difflib
 import json
 import requests
+from typing import Optional
 from config import (
     STREAM_BUFFER_SIZE,
     BASE_URL, API_KEY, MODEL_NAME,
@@ -45,7 +46,7 @@ class LLMClient:
         self._last_buffer = ""
         self._repeat_count = 0
 
-    def _parse_line(self, line: str) -> str | None:
+    def _parse_line(self, line: str) -> Optional[str]:
         """解析单行 SSE 数据，返回 None 表示结束信号"""
         line_stripped = line.strip()
         if line_stripped.startswith('data: '):
