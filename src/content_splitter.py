@@ -8,53 +8,39 @@ import re
 from typing import List, Dict
 
 
-def is_chapter_title(text: str) -> bool:
+def is_table_of_contents(text: str) -> bool:
     """
-    判断是否是章节标题
+    判断是否是目录内容
+
+    判断标准（同时满足）：
+    1. 段落中没有中英文逗号
+    2. 以数字结尾
+    3. 去除所有标点符号后不超过 20 个字符
 
     Args:
-        text: 待判断的文本
-
-    Returns:
-        bool: 是否是章节标题
-    """
-    text = text.strip()
-    patterns = [
-        r'^第[一二三四五六七八九十\d]+章',  # 第X章
-        r'^Chapter\s+\d+',  # Chapter X
-        r'^\d+\.\s+',  # 1. 2. 等编号格式
-        r'^第 \d+ 节',  # 第 X 节
-    ]
-    for pattern in patterns:
-        if re.match(pattern, text, re.IGNORECASE):
-            return True
-    return False
-
-
-def is_table_of_contents(line: str) -> bool:
-    """
-    判断是否是目录内容（避免将目录中的章节标题误认为是真正章节）
-
-    Args:
-        line: 文本行
+        text: 文本段落
 
     Returns:
         bool: 是否是目录内容
     """
-    # 目录常见标识
-    toc_keywords = ['目录', '目  录', '目录CONTENTS', 'CONTENTS', 'Contents']
+    stripped = text.strip()
+    if not stripped:
+        return False
 
-    # 简单判断：如果包含"目录"且后面跟着章节标题，可能是目录
-    stripped = line.strip()
-    for keyword in toc_keywords:
-        if keyword in stripped.upper():
-            return True
+    # 1. 没有中英文逗号
+    if ',' in stripped or '，' in stripped:
+        return False
 
-    # 如果行包含页码格式（如 "... 5" 或 "...123"），可能是目录
-    if re.search(r'\.{3,}\s*\d+$', stripped) or re.search(r'\.{3,}\s*$', stripped):
-        return True
+    # 2. 以数字结尾
+    if not re.search(r'\d+$', stripped):
+        return False
 
-    return False
+    # 3. 去除所有标点符号后不超过 100 个字符
+    clean_text = re.sub(r'[^\w\s]', '', stripped)
+    if len(clean_text.replace(' ', '')) > 100:
+        return False
+
+    return True
 
 
 def extract_chapters_from_toc(lines: List[str]) -> List[Dict[str, str]]:
@@ -69,10 +55,12 @@ def extract_chapters_from_toc(lines: List[str]) -> List[Dict[str, str]]:
     """
     chapters = []
 
-    # 查找目录区域
+    # 查找目录区域（通过关键词定位目录标题行）
+    toc_keywords = ['目录', '目 录', 'CONTENTS']
     toc_start = -1
     for i, line in enumerate(lines):
-        if is_table_of_contents(line):
+        stripped_upper = line.strip().upper()
+        if any(kw in stripped_upper for kw in toc_keywords):
             toc_start = i
             break
 
@@ -85,12 +73,10 @@ def extract_chapters_from_toc(lines: List[str]) -> List[Dict[str, str]]:
         if not line:
             continue
 
-        # 通用模式：最左边是文字，最后面是页码（阿拉伯数字或罗马数字）
-        # 匹配格式：标题 + 空格/制表符 + 页码
-        pattern = r'^(.+?)\s+[IVXLCDM\d]+$'
-        match = re.match(pattern, line)
-        if match:
-            title = match.group(1).strip()
+        # 使用 is_table_of_contents 判断是否为目录条目
+        if is_table_of_contents(line):
+            # 提取标题：去掉末尾的数字页码
+            title = re.sub(r'\s+\d+$', '', line).strip()
             # 过滤掉小节标题（如 "1.1"、"2.3" 等）
             if not re.match(r'^\d+\.\d+', title):
                 # 去掉前缀（如"第X章"、"Chapter X"等）
@@ -110,7 +96,7 @@ def extract_chapters_from_toc(lines: List[str]) -> List[Dict[str, str]]:
                 chapters.append({'title': title})
 
         # 如果遇到明显的正文内容（长段落），停止解析目录
-        if len(line) > 200 and not is_chapter_title(line) and '参考文献' not in line:
+        if len(line) > 200 and '参考文献' not in line:
             break
 
     return chapters
