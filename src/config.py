@@ -7,12 +7,13 @@ import os
 
 # ==================== 后端配置 ====================
 # LLM 服务地址，兼容 Ollama / llama.cpp / OpenAI / DeepSeek 等所有 OpenAI 兼容 API
-BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8080/')
+# 直接修改此处即可，无需设置环境变量
+BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:11434/')
 
-# API Key（Ollama 和 llama.cpp 默认无需认证，云服务需要）
+# API Key（本地服务留空，云服务填写您的 API Key）
 API_KEY = os.getenv('API_KEY', '')
 
-# 模型名称（本地服务通常不需要指定，云服务需要指定具体模型）
+# 模型名称（本地服务留空，云服务填写模型名称）
 MODEL_NAME = os.getenv('MODEL_NAME', '')
 
 # ==================== 流式输出配置 ====================

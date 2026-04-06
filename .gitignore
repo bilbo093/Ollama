@@ -4,12 +4,14 @@ __pycache__/
 *$py.class
 *.so
 
-# Input and Output files
+# Input and Output directories
 input/
 output/
-*.txt
-*.docx
-*.pdf
+
+# Generated files (but keep examples)
+_fixed.txt
+_fixed.docx
+_grammar.txt
 
 # IDE
 .vscode/

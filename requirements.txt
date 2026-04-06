@@ -1,0 +1,10 @@
+# OllamaDoc-Processor 依赖列表
+
+# 基础依赖
+requests>=2.31.0
+
+# DOCX 支持
+python-docx>=1.1.0
+
+
+
