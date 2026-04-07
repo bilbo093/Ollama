@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务进度 - OllamaDoc-Processor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <h2>OllamaDoc</h2>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="/" class="nav-item">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <span>文件处理</span>
+                </a>
+                <a href="/settings" class="nav-item">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    <span>系统设置</span>
+                </a>
+                <a href="/prompts" class="nav-item">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                    <span>提示词配置</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <span class="version">v1.0.0</span>
+            </div>
+        </aside>
+        
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="header">
+                <h1>任务进度</h1>
+                <button class="btn btn-text" onclick="window.location.href='/'">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"/>
+                        <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                    返回
+                </button>
+            </header>
+            
+            <div class="content-wrapper">
+                <!-- 任务信息卡片 -->
+                <div class="card">
+                    <div class="task-info">
+                        <div class="info-item">
+                            <span class="info-label">任务 ID</span>
+                            <span class="info-value" id="taskId">{{ task_id }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">处理模式</span>
+                            <span class="badge badge-info" id="taskMode">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">状态</span>
+                            <span class="badge" id="taskStatus">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">文件名</span>
+                            <span class="info-value" id="taskFilename">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">进度</span>
+                            <span class="info-value" id="taskProgress">0 / 0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 进度条 -->
+                    <div class="progress-section">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                        </div>
+                        <p class="progress-message" id="progressMessage">等待任务开始...</p>
+                    </div>
+                    
+                    <!-- 操作按钮 -->
+                    <div class="action-buttons" id="actionButtons">
+                        <button class="btn btn-danger" id="cancelBtn" style="display: none;" onclick="cancelTask()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                <line x1="9" y1="9" x2="15" y2="15"/>
+                            </svg>
+                            取消任务
+                        </button>
+                        <button class="btn btn-info" id="previewBtn" style="display: none;" onclick="togglePreview()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            预览结果
+                        </button>
+                        <button class="btn btn-success btn-large" id="downloadBtn" style="display: none;" onclick="downloadResult()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            下载结果
+                        </button>
+                        <button class="btn btn-secondary" id="homeBtn" style="display: none;" onclick="window.location.href='/'">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                                <polyline points="9 22 9 12 15 12 15 22"/>
+                            </svg>
+                            继续处理其他文件
+                        </button>
+                    </div>
+                    
+                    <!-- 错误信息 -->
+                    <div class="alert alert-error" id="errorAlert" style="display: none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="15" y1="9" x2="9" y2="15"/>
+                            <line x1="9" y1="9" x2="15" y2="15"/>
+                        </svg>
+                        <span id="errorMessage"></span>
+                    </div>
+
+                    <!-- 预览面板 -->
+                    <div class="preview-panel" id="previewPanel" style="display: none;">
+                        <div class="preview-header">
+                            <div class="preview-title-row">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                <span>结果预览</span>
+                                <span class="preview-file-info" id="previewFileInfo">-</span>
+                            </div>
+                            <div class="preview-actions">
+                                <button class="btn btn-text" onclick="downloadResult()" title="下载文件">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7 10 12 15 17 10"/>
+                                        <line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                    下载
+                                </button>
+                                <button class="btn btn-text" onclick="togglePreview()" title="收起">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="18 15 12 9 6 15"/>
+                                    </svg>
+                                    收起
+                                </button>
+                            </div>
+                        </div>
+                        <div class="preview-content" id="previewContent">
+                            <div class="preview-loading">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 实时日志 -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        <span>实时日志</span>
+                        <button class="btn btn-text" onclick="clearLogs()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            清空
+                        </button>
+                    </div>
+                    
+                    <div class="log-container" id="logContainer">
+                        <div class="log-empty">等待日志输出...</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 复用已有 TXT 选择对话框 -->
+    <div class="modal-overlay" id="txtChoiceModal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>检测到已存在的语法检查文件</h3>
+            </div>
+            <div class="modal-body">
+                <p id="txtChoiceMessage" class="txt-choice-message"></p>
+                <div class="choice-options">
+                    <button class="choice-btn reuse" onclick="submitTxtChoice('reuse')">
+                        <strong>选项 1：</strong>使用现有 TXT 生成 DOCX<br>
+                        <small>跳过 LLM 检查，直接应用已有的修改</small>
+                    </button>
+                    <button class="choice-btn regenerate" onclick="submitTxtChoice('regenerate')">
+                        <strong>选项 2：</strong>重新进行语法检查<br>
+                        <small>覆盖现有的 TXT 文件，重新调用 LLM</small>
+                    </button>
+                    <button class="choice-btn cancel" onclick="submitTxtChoice('cancel')">
+                        <strong>选项 3：</strong>取消操作<br>
+                        <small>取消本次任务</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div id="notificationContainer"></div>
+    
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 任务页面初始化
+        const taskId = '{{ task_id }}';
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // 连接 SocketIO
+            const socket = io();
+
+            // 监听连接事件
+            socket.on('connect', function() {
+                // 订阅任务更新
+                socket.emit('subscribe_task', { task_id: taskId });
+            });
+
+            // 监听任务状态
+            socket.on('task_status', function(data) {
+                console.log('收到 task_status:', data);
+                updateTaskUI(data);
+            });
+
+            // 监听任务日志
+            socket.on('task_log', function(data) {
+                if (data.task_id === taskId) {
+                    addLog(data);
+                }
+            });
+
+            // 监听 LLM 实时进度
+            socket.on('llm_progress', function(data) {
+                if (data.task_id === taskId) {
+                    updateLLMProgress(data);
+                }
+            });
+
+            // 监听已存在 TXT 文件通知
+            socket.on('existing_txt_found', function(data) {
+                if (data.task_id === taskId) {
+                    showTxtChoiceModal(data);
+                }
+            });
+
+            // 加载初始任务状态
+            loadTaskStatus(taskId);
+        });
+        
+        // 显示 TXT 选择对话框
+        function showTxtChoiceModal(data) {
+            const modal = document.getElementById('txtChoiceModal');
+            const messageEl = document.getElementById('txtChoiceMessage');
+            
+            if (modal && messageEl) {
+                messageEl.textContent = data.message;
+                modal.style.display = 'flex';
+            } else {
+                showNotification('检测到已存在的TXT文件，请刷新页面后重试', 'warning');
+            }
+        }
+        
+        // 提交用户选择
+        async function submitTxtChoice(choice) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/txt-choice`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ choice: choice })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('txtChoiceModal').style.display = 'none';
+                    showNotification('已提交选择：' + choice, 'success');
+                } else {
+                    showNotification('提交失败：' + result.message, 'error');
+                }
+            } catch (error) {
+                showNotification('提交失败：' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

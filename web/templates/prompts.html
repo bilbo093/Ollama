@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>提示词配置 - OllamaDoc-Processor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prompts.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <h2>OllamaDoc</h2>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="/" class="nav-item">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <span>文件处理</span>
+                </a>
+                <a href="/settings" class="nav-item">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    <span>系统设置</span>
+                </a>
+                <a href="/prompts" class="nav-item active">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                    <span>提示词配置</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <span class="version">v1.0.0</span>
+            </div>
+        </aside>
+        
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="header">
+                <h1>提示词配置</h1>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn btn-primary" onclick="saveCurrentVersion()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                        </svg>
+                        保存当前版本
+                    </button>
+                </div>
+            </header>
+            
+            <div class="content-wrapper prompts-layout">
+                <!-- 左侧：类别导航 -->
+                <div class="category-nav">
+                    <h3>处理类别</h3>
+                    <div id="categoryList" class="category-list">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+                
+                <!-- 中间：版本列表 -->
+                <div class="version-panel">
+                    <div class="version-header">
+                        <h3 id="currentCategoryName">选择类别</h3>
+                        <button class="btn btn-text btn-small" onclick="showAddVersionDialog()" id="addVersionBtn" style="display: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            新增版本
+                        </button>
+                    </div>
+                    <div id="versionList" class="version-list">
+                        <div class="empty-state">
+                            <p>请先选择左侧的类别</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 右侧：编辑器 -->
+                <div class="editor-panel">
+                    <div class="editor-header">
+                        <input type="text" id="versionName" class="input" placeholder="版本名称">
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-text btn-small" onclick="resetToDefault()" id="resetBtn" style="display: none;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="1 4 1 10 7 10"/>
+                                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                                </svg>
+                                恢复默认
+                            </button>
+                            <button class="btn btn-danger btn-small" onclick="deleteCurrentVersion()" id="deleteBtn" style="display: none;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <p class="prompt-description" id="versionDescription">版本描述</p>
+                    
+                    <div class="form-group">
+                        <label class="form-label">角色定义 (Role)</label>
+                        <textarea class="textarea" id="roleEditor" rows="4" placeholder="在此输入角色定义..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">提示词模板 (Prompt)</label>
+                        <textarea class="textarea textarea-large" id="promptEditor" placeholder="在此输入提示词模板，使用 {content}、{chapter_title} 等占位符..."></textarea>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 新增版本对话框 -->
+    <div class="modal" id="addVersionModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新增版本</h3>
+                <button class="modal-close" onclick="closeAddVersionDialog()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">版本 ID（英文，用于文件名）</label>
+                    <input type="text" id="newVersionId" class="input" placeholder="例如: v1, custom, myversion">
+                    <p class="form-hint">只能使用英文字母、数字和下划线</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">版本名称</label>
+                    <input type="text" id="newVersionName" class="input" placeholder="例如: 我的自定义版本">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeAddVersionDialog()">取消</button>
+                <button class="btn btn-primary" onclick="addNewVersion()">创建</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notificationContainer"></div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/prompts.js') }}"></script>
+</body>
+</html>

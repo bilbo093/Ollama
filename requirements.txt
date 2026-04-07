@@ -6,5 +6,10 @@ requests>=2.31.0
 # DOCX 支持
 python-docx>=1.1.0
 
+# Web UI 依赖（纯 Python，无需 Node.js）
+flask>=3.0.0
+flask-socketio>=5.3.0
+simple-websocket>=1.0.0
+
 
 

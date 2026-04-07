@@ -8,7 +8,7 @@ import os
 # ==================== 后端配置 ====================
 # LLM 服务地址，兼容 Ollama / llama.cpp / OpenAI / DeepSeek 等所有 OpenAI 兼容 API
 # 直接修改此处即可，无需设置环境变量
-BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:11434/')
+BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8080')
 
 # API Key（本地服务留空，云服务填写您的 API Key）
 API_KEY = os.getenv('API_KEY', '')
@@ -31,8 +31,6 @@ from prompts import (
     CHAPTER_SUMMARIZER_PROMPT,
     GRAMMAR_CHECKER_ROLE,
     GRAMMAR_CHECKER_PROMPT,
-    GRAMMAR_CHECKER_ROLE_V2,
-    GRAMMAR_CHECKER_PROMPT_V2,
 )
 
 # ==================== 处理器配置 ====================
@@ -48,8 +46,8 @@ PROCESSOR_CONFIGS = {
         'prompt_template': CHAPTER_SUMMARIZER_PROMPT,
     },
     'paragraph': {
-        'role': GRAMMAR_CHECKER_ROLE_V2,
-        'prompt_template': GRAMMAR_CHECKER_PROMPT_V2,
+        'role': GRAMMAR_CHECKER_ROLE,
+        'prompt_template': GRAMMAR_CHECKER_PROMPT,
     },
 }
 

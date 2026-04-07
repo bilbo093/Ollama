@@ -151,25 +151,14 @@ def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, ollama_resul
 def _parse_txt(txt_file: str) -> dict:
     """
     从 TXT 文件中解析段落修改记录
-    
+
     TXT 格式(由 _save_modifications_to_txt 写入):
     ============================================================
     段落 N
     ============================================================
-    原始内容：
-    {原始段落文本}
-    
+    原始内容（前20字）：{前20个字}
     Ollama 输出：
     {Ollama 完整返回内容}
-    
-    Ollama 返回格式(由 GRAMMAR_CHECKER_PROMPT 定义):
-    #### 第一部分：修改后的文本
-    ###MODIFIED_TEXT###
-    {修改后的文本内容}
-    
-    #### 第二部分：修改说明
-    ###MODIFIED_DESCRIPTION###
-    {修改说明}
 
     Args:
         txt_file: TXT 文件路径
@@ -182,31 +171,31 @@ def _parse_txt(txt_file: str) -> dict:
 
     modifications = {}
     import re
-    
+
     with open(txt_file, 'r', encoding='utf-8') as f:
         content = f.read()
 
     # 使用正则表达式匹配每个段落块
-    # 模式: 60个= + 换行 + "段落 N" + 换行 + 60个= + ... + "Ollama 输出:" + ... + (到下一个段落或文件结尾)
+    # 匹配保存时的实际格式
     para_pattern = re.compile(
         r'={60}\s*\n段落\s+(\d+)\s*\n={60}\s*\n'
-        r'原始内容：.*?\n\n'
+        r'原始内容[^\n]*\n'
         r'Ollama\s*输出：(.*?)(?=\n={60}\s*\n段落\s+\d+\s*\n={60}|\Z)',
         re.DOTALL
     )
-    
+
     matches = para_pattern.finditer(content)
-    
+
     for match in matches:
         para_idx = int(match.group(1))
         ollama_output = match.group(2).strip()
-        
+
         # 从 Ollama 输出中解析修改后的文本
         modified_text = _parse_modified_text(ollama_output)
-        
+
         if modified_text:
             modifications[para_idx] = modified_text
-    
+
     return modifications
 
 
@@ -297,9 +286,48 @@ def apply_txt_to_document(provider: DocumentProvider, txt_file: str) -> Tuple[in
     return len(modifications), modified_count
 
 
+def apply_txt_to_document_with_output(
+    provider: DocumentProvider, 
+    txt_file: str, 
+    output_path: str
+) -> Tuple[int, int]:
+    """
+    从 TXT 文件解析修改记录并应用到文档，直接保存到指定路径
+    **即使没有修改记录，也会生成一个和源文件相同的DOCX**
+
+    Args:
+        provider: 文档提供者实例
+        txt_file: TXT 文件路径（包含修改记录）
+        output_path: 输出文件路径（直接保存到该路径）
+
+    Returns:
+        Tuple[int, int]: (解析的修改记录数, 实际修改的段落数)
+    """
+    if not os.path.exists(txt_file):
+        print(f"[错误] TXT 文件不存在：{txt_file}")
+        return 0, 0
+
+    modifications = _parse_txt(txt_file)
+    
+    if not modifications:
+        print("[信息] 未找到任何修改记录，将生成与源文件相同的副本")
+    
+    # 确保输出目录存在
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
+    modified_count = provider.apply_and_save(modifications, output_path)
+
+    print(f"[完成] 已保存: {output_path}，修改 {modified_count} 个段落")
+            
+    return len(modifications), modified_count
+
+
 __all__ = [
     'check_paragraph',
     'process_document',
     'apply_txt_to_document',
+    'apply_txt_to_document_with_output',
     '_parse_modified_text',
 ]

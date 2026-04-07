@@ -101,10 +101,9 @@ class DocxDocumentProvider(DocumentProvider):
         return [p.text.strip() for p in self._doc.paragraphs]
 
     def apply_and_save(self, modifications: dict[int, str], output_path: Optional[str] = None) -> int:
-        if not modifications:
-            return 0
-
+        # 即使没有修改，也要保存文件（生成副本）
         modified_count = 0
+
         for idx, para in enumerate(self._doc.paragraphs, 1):
             if idx in modifications and modifications[idx]:
                 _replace_para_text_with_refs(para, modifications[idx])

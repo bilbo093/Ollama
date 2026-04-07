@@ -3,8 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.egg-info/
+dist/
+build/
 
-# Input and Output directories
+# Input and Output directories (用户文档，包含隐私)
 input/
 output/
 
@@ -13,8 +16,48 @@ _fixed.txt
 _fixed.docx
 _grammar.txt
 
+# Web directories
+web/uploads/
+web/results/
+
+# 任务日志（包含本地路径、文件名、时间等隐私信息）
+web/tasks.json
+
+# Web frontend
+web/frontend/node_modules/
+web/frontend/dist/
+
+# 模型缓存
+.qwen/
+
+# 环境变量和密钥
+.env
+.env.*
+*.env
+
+# 日志文件
+*.log
+logs/
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.code-workspace
+
+# 提示词（仅保留默认版本）
+src/prompts/full/*
+!src/prompts/full/default.md
+src/prompts/chapter/*
+!src/prompts/chapter/default.md
+src/prompts/paragraph/*
+!src/prompts/paragraph/default.md
+
+# 启动脚本（包含本地路径配置）
+start-web.bat
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
