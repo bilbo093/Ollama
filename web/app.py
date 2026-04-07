@@ -26,7 +26,7 @@ if str(src_dir) not in sys.path:
 from ollama_processor import LLMClient
 from file_io import read_file_content, save_to_txt
 from config import PROCESSOR_CONFIGS
-from docx_editor import process_document, apply_txt_to_document, is_ref_section, _skip_para, check_paragraph, _save_mods_to_txt, _parse_modified_text
+from docx_editor import process_document, apply_txt_to_document, is_ref_section, _skip_para, _save_mods_to_txt, _parse_modified_text
 from document_provider import create_provider
 from content_splitter import split_content_by_chapters
 
@@ -51,9 +51,6 @@ class WebLLMClient(LLMClient):
             self._last_emit_count = self._char_count
 
 
-# 创建全局 LLM 客户端（不带 task_id，用于普通调用）
-llm_client = LLMClient()
-
 def llm_chat(messages, task_id=None):
     """
     LLM 调用函数，支持 Web 环境下的实时进度推送
@@ -75,7 +72,7 @@ def llm_chat(messages, task_id=None):
         return client.chat(messages)
     else:
         # 普通环境
-        return llm_client.chat(messages)
+        return LLMClient().chat(messages)
 
 # 创建 Flask 应用
 app = Flask(__name__)
@@ -98,7 +95,6 @@ task_choices = {}  # 存储用户的 TXT 选择
 
 
 import json
-import threading
 task_events = {}  # 存储任务等待事件
 
 # 任务持久化配置
@@ -343,13 +339,119 @@ def cancel_task_api(task_id):
     tasks[task_id]['status'] = 'cancelled'
     tasks[task_id]['message'] = '任务已取消'
     tasks[task_id]['completed_at'] = datetime.now().isoformat()
-    
+
     # 保存任务
     save_tasks_to_file()
 
     return jsonify({
         'success': True,
         'message': '任务已取消'
+    })
+
+
+@app.route('/api/tasks/<task_id>/restart', methods=['POST'])
+def restart_task_api(task_id):
+    """重启任务"""
+    if task_id not in tasks:
+        return jsonify({'success': False, 'message': '任务不存在'}), 404
+
+    task = tasks[task_id]
+
+    # 检查任务是否可以重启（只允许已完成、失败或取消的任务）
+    if task['status'] not in ['completed', 'failed', 'cancelled']:
+        return jsonify({
+            'success': False,
+            'message': '只能重启已完成、失败或取消的任务'
+        }), 400
+
+    # 查找输入文件
+    input_file = None
+    for ext in ['.txt', '.docx']:
+        file_path = UPLOAD_DIR / f"{task_id}{ext}"
+        if file_path.exists():
+            input_file = str(file_path)
+            break
+
+    if not input_file:
+        return jsonify({'success': False, 'message': '输入文件不存在'}), 404
+
+    # 重置任务状态
+    task.update({
+        'status': 'pending',
+        'progress': 0,
+        'current': 0,
+        'total': 0,
+        'message': '任务已重启，等待处理...',
+        'error_message': None,
+        'completed_at': None,
+        'output_filename': None
+    })
+
+    # 清空日志
+    task_logs[task_id] = []
+
+    # 保存任务
+    save_tasks_to_file()
+
+    # 启动后台处理线程
+    thread = threading.Thread(
+        target=run_task,
+        args=(task_id, task['mode'], task.get('version', 'default'), input_file)
+    )
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'success': True,
+        'task_id': task_id,
+        'message': '任务已重启并开始处理'
+    })
+
+
+@app.route('/api/tasks/<task_id>', methods=['DELETE'])
+def delete_task_api(task_id):
+    """删除任务"""
+    if task_id not in tasks:
+        return jsonify({'success': False, 'message': '任务不存在'}), 404
+
+    task = tasks[task_id]
+
+    # 不允许删除正在处理的任务
+    if task['status'] == 'processing':
+        return jsonify({
+            'success': False,
+            'message': '无法删除正在处理中的任务，请先取消任务'
+        }), 400
+
+    # 删除输出文件
+    original_name = task.get('original_filename', task_id)
+    deleted_files = []
+    for ext in ['.docx', '.txt']:
+        for pattern in [
+            f"{original_name}_output{ext}",
+            f"{original_name}_fixed{ext}",
+            f"{original_name}_grammar{ext}",
+            f"{task_id}_output{ext}",
+            f"{task_id}_fixed{ext}",
+            f"{task_id}_grammar{ext}",
+        ]:
+            file_path = RESULTS_DIR / pattern
+            if file_path.exists():
+                file_path.unlink()
+                deleted_files.append(pattern)
+
+    # 删除任务记录
+    tasks.pop(task_id, None)
+    task_logs.pop(task_id, None)
+    task_choices.pop(task_id, None)
+
+    # 保存更新后的任务列表
+    save_tasks_to_file()
+
+    return jsonify({
+        'success': True,
+        'message': '任务已删除',
+        'deleted_files': deleted_files
     })
 
 
@@ -440,6 +542,86 @@ def preview_result(task_id):
             'size': file_path.stat().st_size,
             'message': f'{file_ext.upper()} 文件需要下载后查看'
         })
+
+
+@app.route('/api/uploaded-files')
+def list_uploaded_files():
+    """获取 uploads 目录中所有已上传文件列表"""
+    files = []
+    
+    # 扫描 uploads 目录
+    for file_path in UPLOAD_DIR.iterdir():
+        if file_path.is_file():
+            file_ext = file_path.suffix.lower()
+            if file_ext in ['.txt', '.docx']:
+                file_id = file_path.stem  # 指纹 ID
+                file_size = file_path.stat().st_size
+                
+                # 从任务记录中查找原始文件名
+                original_filename = None
+                upload_time = None
+                
+                for task in tasks.values():
+                    if task.get('input_filename') == file_path.name:
+                        original_filename = task.get('original_filename')
+                        upload_time = task.get('created_at')
+                        break
+                
+                # 如果没找到任务记录，使用物理文件名
+                if not original_filename:
+                    original_filename = file_path.name
+                
+                files.append({
+                    'file_id': file_id,
+                    'original_filename': original_filename,
+                    'file_size': file_size,
+                    'file_ext': file_ext,
+                    'upload_time': upload_time
+                })
+    
+    # 按上传时间倒序排序
+    files.sort(key=lambda x: x['upload_time'] or '', reverse=True)
+    
+    return jsonify({
+        'success': True,
+        'files': files
+    })
+
+
+@app.route('/api/uploaded-files/<file_id>', methods=['DELETE'])
+def delete_uploaded_file(file_id):
+    """删除已上传的文件"""
+    deleted = []
+    
+    # 查找并删除物理文件
+    for ext in ['.txt', '.docx']:
+        file_path = UPLOAD_DIR / f"{file_id}{ext}"
+        if file_path.exists():
+            file_path.unlink()
+            deleted.append(file_path.name)
+    
+    # 删除相关的未完成/失败任务记录
+    tasks_to_remove = []
+    for task_id, task in tasks.items():
+        if task.get('input_filename') in deleted:
+            # 只删除未完成任务（pending/processing/failed）
+            if task.get('status') in ['pending', 'processing', 'failed']:
+                tasks_to_remove.append(task_id)
+    
+    for task_id in tasks_to_remove:
+        # 清理任务记录
+        tasks.pop(task_id, None)
+        task_logs.pop(task_id, None)
+        task_choices.pop(task_id, None)
+    
+    # 保存更新后的任务列表
+    save_tasks_to_file()
+    
+    return jsonify({
+        'success': True,
+        'message': f'已删除 {len(deleted)} 个文件',
+        'deleted_files': deleted
+    })
 
 
 @app.route('/api/config')

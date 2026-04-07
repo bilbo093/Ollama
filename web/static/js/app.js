@@ -6,6 +6,7 @@
 let selectedFile = null;
 let uploading = false;
 let processing = false;
+let uploadedFiles = []; // 存储已上传文件列表
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -14,9 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     initProcessButton();
     loadAllVersions();
 
-    // 如果在主页，加载任务列表
+    // 如果在主页，加载任务列表和已上传文件
     if (window.location.pathname === '/') {
         loadTasks();
+        loadUploadedFiles();
     }
 });
 
@@ -62,6 +64,11 @@ async function handleFileSelect(file) {
     // 验证文件类型
     const validExtensions = ['.txt', '.docx'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (ext === '.doc') {
+        showNotification('不支持旧版 .doc 格式，请在 Word 中另存为 .docx 后再上传', 'error');
+        return;
+    }
 
     if (!validExtensions.includes(ext)) {
         showNotification('仅支持 .txt 和 .docx 格式', 'error');
@@ -144,37 +151,6 @@ async function uploadFile(file) {
 }
 
 // ==================== 处理模式 ====================
-
-function initModeChange() {
-    const modeRadios = document.querySelectorAll('input[name="mode"]');
-    const modeDesc = document.getElementById('modeDesc');
-    const grammarSection = document.getElementById('grammarVersionSection');
-    
-    if (!modeRadios.length) return;
-    
-    const descriptions = {
-        full: '全文模式：将整个文档一次性送入 LLM，适用于生成论文"总结与展望"章节',
-        chapter: '章节模式：按章节拆分后逐章送入 LLM，适用于生成各章总结',
-        paragraph: '段落模式：按段落拆分后逐段送入 LLM，适用于语法检查和润色'
-    };
-    
-    modeRadios.forEach(radio => {
-        radio.addEventListener('change', (e) => {
-            const mode = e.target.value;
-
-            // 更新描述
-            if (modeDesc) {
-                modeDesc.querySelector('span').textContent = descriptions[mode];
-            }
-
-            // 显示/隐藏段落模式版本选择
-            const paragraphSection = document.getElementById('paragraphVersionSection');
-            if (paragraphSection) {
-                paragraphSection.style.display = mode === 'paragraph' ? 'block' : 'none';
-            }
-        });
-    });
-}
 
 // 加载所有模式的版本列表
 async function loadAllVersions() {
@@ -362,6 +338,9 @@ async function loadTasks() {
                 <td><span class="badge badge-${getStatusClass(task.status)}">${getStatusLabel(task.status)}</span></td>
                 <td>
                     <a href="/task/${task.task_id}" class="btn btn-text" style="padding: 4px 8px;">查看</a>
+                    ${['completed', 'failed', 'cancelled'].includes(task.status) ? `
+                        <button class="btn btn-text btn-danger-text" style="padding: 4px 8px; color: #f56c6c;" onclick="deleteTask('${task.task_id}')">删除</button>
+                    ` : ''}
                 </td>
             </tr>
         `).join('');
@@ -422,43 +401,48 @@ function updateTaskUI(task) {
     const progressFill = document.getElementById('progressFill');
     const progressMessage = document.getElementById('progressMessage');
     const cancelBtn = document.getElementById('cancelBtn');
+    const restartBtn = document.getElementById('restartBtn');
     const previewBtn = document.getElementById('previewBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const homeBtn = document.getElementById('homeBtn');
     const errorAlert = document.getElementById('errorAlert');
     const errorMessage = document.getElementById('errorMessage');
-    
+
     if (modeEl) {
         modeEl.textContent = getModeLabel(task.mode);
         modeEl.className = `badge badge-${task.status === 'completed' ? 'success' : 'info'}`;
     }
-    
+
     if (statusEl) {
         statusEl.textContent = getStatusLabel(task.status);
         statusEl.className = `badge badge-${getStatusClass(task.status)}`;
     }
-    
+
     if (filenameEl) {
         filenameEl.textContent = task.original_filename || task.input_filename || '-';
     }
-    
+
     if (progressEl) {
         progressEl.textContent = `${task.current || 0} / ${task.total || 0}`;
     }
-    
+
     if (progressFill) {
         progressFill.style.width = `${task.progress || 0}%`;
     }
-    
+
     if (progressMessage) {
         progressMessage.textContent = task.message || '等待任务开始...';
     }
-    
+
     // 显示/隐藏按钮
     if (cancelBtn) {
         cancelBtn.style.display = task.status === 'processing' ? 'inline-flex' : 'none';
     }
-    
+
+    if (restartBtn) {
+        restartBtn.style.display = ['completed', 'failed', 'cancelled'].includes(task.status) ? 'inline-flex' : 'none';
+    }
+
     if (downloadBtn) {
         downloadBtn.style.display = task.status === 'completed' ? 'inline-flex' : 'none';
     }
@@ -470,7 +454,7 @@ function updateTaskUI(task) {
     if (homeBtn) {
         homeBtn.style.display = task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled' ? 'inline-flex' : 'none';
     }
-    
+
     // 显示错误
     if (errorAlert && errorMessage) {
         if (task.status === 'failed') {
@@ -484,17 +468,17 @@ function updateTaskUI(task) {
 
 async function cancelTask() {
     if (!confirm('确定要取消当前任务吗？')) return;
-    
+
     const taskId = document.getElementById('taskId')?.textContent;
     if (!taskId) return;
-    
+
     try {
         const response = await fetch(`/api/tasks/${taskId}/cancel`, {
             method: 'POST'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showNotification('任务已取消', 'success');
             loadTaskStatus(taskId);
@@ -503,6 +487,64 @@ async function cancelTask() {
         }
     } catch (error) {
         showNotification('取消失败: ' + error.message, 'error');
+    }
+}
+
+async function restartTask() {
+    if (!confirm('确定要重启任务吗？\n\n这将清空当前进度和日志，重新开始处理。')) return;
+
+    const taskId = document.getElementById('taskId')?.textContent;
+    if (!taskId) return;
+
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/restart`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('任务已重启，正在重新处理...', 'success');
+            
+            // 清空日志
+            clearLogs();
+            
+            // 隐藏预览面板
+            const previewPanel = document.getElementById('previewPanel');
+            if (previewPanel) {
+                previewPanel.style.display = 'none';
+            }
+            
+            // 重新加载任务状态
+            loadTaskStatus(taskId);
+        } else {
+            showNotification('重启失败: ' + data.message, 'error');
+        }
+    } catch (error) {
+        showNotification('重启失败: ' + error.message, 'error');
+    }
+}
+
+async function deleteTask(taskId) {
+    if (!confirm('确定要删除此任务吗？\n\n任务记录和输出文件将被永久删除。')) return;
+
+    try {
+        const response = await fetch(`/api/tasks/${taskId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('任务已删除', 'success');
+            
+            // 刷新任务列表
+            loadTasks();
+        } else {
+            showNotification('删除失败: ' + data.message, 'error');
+        }
+    } catch (error) {
+        showNotification('删除失败: ' + error.message, 'error');
     }
 }
 
@@ -788,4 +830,168 @@ function showNotification(message, type = 'info') {
         notification.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => notification.remove(), 300);
     }, 3000);
+}
+
+// ==================== 已上传文件管理 ====================
+
+async function loadUploadedFiles() {
+    const listContainer = document.getElementById('uploadedFilesCompactList');
+    const emptyState = document.getElementById('compactEmpty');
+    
+    if (!listContainer) return;
+
+    try {
+        const response = await fetch('/api/uploaded-files');
+        const data = await response.json();
+
+        if (!data.success || !data.files || data.files.length === 0) {
+            // 显示空状态
+            if (emptyState) emptyState.style.display = 'block';
+            // 移除所有文件项
+            const fileItems = listContainer.querySelectorAll('.compact-file-item');
+            fileItems.forEach(item => item.remove());
+            return;
+        }
+
+        // 隐藏空状态
+        if (emptyState) emptyState.style.display = 'none';
+
+        // 保存文件列表
+        uploadedFiles = data.files;
+
+        // 渲染文件列表
+        renderUploadedFiles(data.files);
+
+    } catch (error) {
+        console.error('加载已上传文件失败:', error);
+        showNotification('加载已上传文件失败', 'error');
+    }
+}
+
+function renderUploadedFiles(files) {
+    const listContainer = document.getElementById('uploadedFilesCompactList');
+    if (!listContainer) return;
+
+    // 移除旧的文件项
+    const oldItems = listContainer.querySelectorAll('.compact-file-item');
+    oldItems.forEach(item => item.remove());
+
+    files.forEach(file => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'compact-file-item';
+        fileItem.dataset.fileId = file.file_id;
+
+        const isSelected = selectedFile && selectedFile.file_id === file.file_id;
+        if (isSelected) {
+            fileItem.classList.add('selected');
+        }
+
+        fileItem.innerHTML = `
+            <div class="compact-file-icon ${file.file_ext.replace('.', '')}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                </svg>
+            </div>
+            <div class="compact-file-info" onclick="selectUploadedFile('${file.file_id}')">
+                <div class="compact-file-name" title="${file.original_filename}">${file.original_filename}</div>
+                <div class="compact-file-meta">${formatFileSize(file.file_size)} · ${file.file_ext.toUpperCase().replace('.', '')}</div>
+            </div>
+            <div class="compact-file-actions">
+                <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" onclick="event.stopPropagation(); selectUploadedFile('${file.file_id}')">
+                    ${isSelected ? '已选' : '选择'}
+                </button>
+                <button class="btn btn-sm btn-danger btn-icon" onclick="event.stopPropagation(); deleteUploadedFile('${file.file_id}')" title="删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+
+        listContainer.appendChild(fileItem);
+    });
+}
+
+function selectUploadedFile(fileId) {
+    const file = uploadedFiles.find(f => f.file_id === fileId);
+    if (!file) {
+        showNotification('文件不存在', 'error');
+        return;
+    }
+
+    // 更新全局状态
+    selectedFile = {
+        file_id: file.file_id,
+        original_filename: file.original_filename,
+        file_size: file.file_size
+    };
+
+    // 更新 UI - 文件信息展示
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const processBtn = document.getElementById('processBtn');
+
+    if (fileInfo && fileName && fileSize) {
+        fileInfo.style.display = 'flex';
+        fileName.textContent = file.original_filename;
+        fileSize.textContent = formatFileSize(file.file_size);
+    }
+
+    // 启用处理按钮
+    if (processBtn) {
+        processBtn.disabled = false;
+    }
+
+    // 重新渲染文件列表（更新选中状态）
+    renderUploadedFiles(uploadedFiles);
+
+    showNotification(`已选择文件: ${file.original_filename}`, 'success');
+
+    // 滚动到顶部，让用户看到文件信息
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteUploadedFile(fileId) {
+    const file = uploadedFiles.find(f => f.file_id === fileId);
+    if (!file) {
+        showNotification('文件不存在', 'error');
+        return;
+    }
+
+    // 确认删除
+    if (!confirm(`确定要删除文件 "${file.original_filename}" 吗？\n\n注意：相关的未完成任务记录也会被删除。`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/uploaded-files/${fileId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('文件已删除', 'success');
+            
+            // 如果删除的是当前选中的文件，清空选择
+            if (selectedFile && selectedFile.file_id === fileId) {
+                selectedFile = null;
+                const fileInfo = document.getElementById('fileInfo');
+                const processBtn = document.getElementById('processBtn');
+                if (fileInfo) fileInfo.style.display = 'none';
+                if (processBtn) processBtn.disabled = true;
+            }
+
+            // 重新加载文件列表
+            loadUploadedFiles();
+        } else {
+            showNotification('删除失败: ' + data.message, 'error');
+        }
+    } catch (error) {
+        console.error('删除文件失败:', error);
+        showNotification('删除失败: ' + error.message, 'error');
+    }
 }

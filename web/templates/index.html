@@ -81,6 +81,7 @@
                                     </svg>
                                     <p class="upload-text">将文件拖到此处，或<em>点击上传</em></p>
                                     <p class="upload-hint">支持 .txt 和 .docx 格式，最大 500MB</p>
+                                    <p class="upload-hint" style="color: #e6a23c; margin-top: 4px;">⚠️ 不支持旧版 .doc 格式，请在 Word 中另存为 .docx 后上传</p>
                                 </div>
                             </div>
                             
@@ -92,9 +93,30 @@
                                 <span id="fileName"></span>
                                 <span class="file-size" id="fileSize"></span>
                             </div>
+
+                            <!-- 已上传文件列表 -->
+                            <div class="uploaded-files-compact" id="uploadedFilesCompact">
+                                <div class="compact-header">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                    </svg>
+                                    <span>已上传文件</span>
+                                    <button class="btn btn-text btn-xs" onclick="loadUploadedFiles()">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="23 4 23 10 17 10"/>
+                                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="compact-list" id="uploadedFilesCompactList">
+                                    <div class="compact-empty" id="compactEmpty">
+                                        <span>暂无已上传文件</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    
+
                     <!-- 右侧：处理配置 -->
                     <div class="col">
                         <div class="card">
@@ -192,7 +214,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- 最近任务列表 -->
                 <div class="card" style="margin-top: 24px;">
                     <div class="card-header">

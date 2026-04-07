@@ -1,104 +1,117 @@
 # OllamaDoc-Processor
 
 ```
-╔══════════════════════╗
-║  📚  ➜  🤖          ║
-║   OllamaDoc          ║
-║   Processor          ║
-║  智能学术文档处理      ║
-╚══════════════════════╝
+╔══════════════════════════╗
+║  📚 智能学术文档处理器     ║
+║  Vibe Coding 实践项目     ║
+╚══════════════════════════╝
 ```
 
-基于本地大模型的学术文档智能处理工具，支持 Ollama 和 llama.cpp 两种后端，为研究人员、学生提供高效的文档分析能力。支持 TXT/DOCX 文档的学术摘要生成、章节总结和语法检查功能。
+> 一个通过 AI 辅助开发的学术文档智能处理工具。这个项目展示了 **Vibe Coding** 的实践：从需求表达到功能实现，从架构设计到 UI 开发，全程通过与 AI 协作完成。
 
-## ✨ 功能特性
+## 🎯 项目简介
 
-### 处理模式
+学术文档处理的痛点：
+- 长文档难以快速生成总结和展望
+- 语法检查和润色耗时耗力
+- 不同章节需要统一风格的总结
 
-- **全文模式**: 整个文档一次性送入 LLM，适用于生成论文"总结与展望"章节
-- **章节模式**: 按章节拆分后逐章送入 LLM，适用于生成各章总结
-- **段落模式**: 按段落拆分后逐段送入 LLM，适用于语法检查和润色
+这个工具通过本地或云端大语言模型，提供三种处理粒度：**全文摘要**、**章节总结**、**段落润色**，满足学术研究中的不同场景需求。
 
-### Web UI 特性 🎨
+## ✨ 核心能力
 
-- 📤 **拖拽上传**: 支持 `.txt` 和 `.docx` 格式，最大 50MB
-- ⚙️ **可视化配置**: 处理模式选择、语法检查版本配置
-- 📊 **实时进度**: WebSocket 推送处理进度和日志
-- 📝 **任务管理**: 查看历史任务、下载结果文件
-- 🔧 **系统设置**: LLM 后端配置和连接测试
-- 🌙 **现代界面**: 响应式设计、中文本地化
+- 🎯 **三种处理模式**：全文 / 章节 / 段落，灵活适配不同需求
+- 🌐 **现代化 Web UI**：拖拽上传、实时进度、任务管理
+- 🤖 **多后端支持**：Ollama、llama.cpp、DeepSeek、通义千问、OpenAI 等
+- 📝 **提示词系统**：支持版本管理和自定义编辑
+- 🔒 **隐私安全**：本地部署，数据无需外传
 
-## 预设提示词
+## 🚀 快速开始
 
-项目内置三种处理模式的提示词和角色配置，位于 `src/prompts/` 目录：
-
-- `academic_summarizer.py` - 学术摘要生成（盲审专家角色）
-- `chapter_summarizer.py` - 章节总结生成（学术助手角色）
-- `grammar_checker.py` - 语法检查（学术编辑角色，支持最小干预和学术升格两种模式）
-
-## 支持的后端
-
-- **本地服务**: Ollama、llama.cpp
-- **云端服务**: DeepSeek、通义千问、OpenAI（需 API Key）
-
-## 支持的格式
-
-- **输入**: .txt、.docx
-- **输出**: .txt、.docx（段落模式自动生成润色后文档）
-
-## 快速启动
-
-### 方式一：Web UI（推荐 ✨）
-
-**纯 Python 实现，无需 Node.js！**
+### Web UI 方式（推荐）
 
 ```bash
-# Windows 一键启动
-start-web.bat
-
-# 或手动启动（使用 conda 环境）
+# 启动 Web 服务
 cd web
-C:\Users\orchi\.conda\envs\py390\python.exe app.py
+python app.py
 ```
 
-访问 http://localhost:5000 即可使用现代化 Web 界面！
+访问 **http://localhost:5000** 即可使用！
 
-### 方式二：命令行工具
+### 命令行方式
 
 ```bash
-# 1. 安装依赖
+# 安装依赖
 pip install -r requirements.txt
 
-# 2. 启动 LLM 服务
-ollama serve
-ollama pull qwen2.5
+# 配置后端（编辑 src/config.py）
+# 运行处理命令
+python main.py full -i input.txt -o output.txt          # 全文模式
+python main.py chapter -i input.txt -o output.txt        # 章节模式
+python main.py paragraph -i input.docx                   # 段落模式
+```
 
-# 3. 配置服务（src/config.py）
+## 🤖 Vibe Coding 实践
+
+这个项目是一个 **Vibe Coding** 的典型案例：
+
+### 什么是 Vibe Coding？
+
+通过与 AI 对话，将想法快速转化为实际可用的代码。不需要逐行编写，而是描述需求、确认架构、验收功能，让 AI 完成大部分编码工作。
+
+### 这个项目如何体现？
+
+- **需求阶段**：描述学术文档处理的痛点和期望功能
+- **架构设计**：讨论 CLI 和 Web UI 的技术选型，确定模块化设计
+- **功能实现**：逐步实现三种处理模式、文件解析、LLM 集成
+- **UI 开发**：描述界面需求和交互流程，生成完整的 Web 前端
+- **迭代优化**：根据使用体验反馈，持续改进提示词和用户体验
+
+### 关键特点
+
+- ✅ **纯 Python 技术栈**：Web UI 无需 Node.js，降低使用门槛
+- ✅ **配置驱动设计**：提示词、后端地址等通过配置文件管理
+- ✅ **模块化架构**：CLI 和 Web UI 共享核心处理逻辑
+- ✅ **渐进式开发**：从简单脚本到完整应用的自然演进
+
+## 📊 处理模式
+
+| 模式 | 适用场景 | 输出 |
+|------|----------|------|
+| **全文模式** | 生成论文总结与展望 | `.txt` |
+| **章节模式** | 逐章生成总结 | `.txt` |
+| **段落模式** | 语法检查与润色 | `.txt` + `.docx` |
+
+## 🔧 配置说明
+
+编辑 `src/config.py` 或通过 Web UI 系统设置页面配置：
+
+```python
+# 本地 Ollama
 BASE_URL = 'http://127.0.0.1:11434/'
 
-# 4. 运行
-python main.py full -i input.txt -o output.txt
+# 或云端服务
+BASE_URL = 'https://api.deepseek.com/'
+API_KEY = 'sk-your-key'
+MODEL_NAME = 'deepseek-chat'
 ```
 
-## 常用命令
+## 📖 详细文档
 
-```bash
-# 学术摘要生成
-python main.py full -i input.txt -o output.txt
+- [💻 CLI 命令行模式](./docs/CLI.md) - 命令行安装、配置和使用
+- [🌐 Web UI 模式](./docs/WEBUI.md) - Web 界面使用和功能介绍
 
-# 章节总结生成
-python main.py chapter -i input.txt -o output.txt
+## 💡 技术栈
 
-# 段落语法检查
-python main.py paragraph -i input.docx
-```
-
-## 详细文档
-
-- [安装配置](./docs/INSTALLATION.md) - 详细安装步骤和配置说明
-- [使用指南](./docs/USAGE.md) - 三种处理模式的使用说明
-- [Web UI 说明](./web/README.md) - Web 界面使用指南
+- **后端核心**：Python + requests + python-docx
+- **Web UI**：Flask + Flask-SocketIO
+- **前端**：原生 HTML/CSS/JavaScript
+- **LLM 后端**：Ollama / llama.cpp / DeepSeek / 通义千问 / OpenAI
 
 ## 📄 许可证
 
 MIT License
+
+---
+
+**Vibe Coding 的核心理念**：与其纠结每一行代码，不如专注想清楚要什么。让 AI 处理实现细节，你只需要描述需求、验收结果。这个项目就是这个理念的最佳实践。 🚀

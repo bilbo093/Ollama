@@ -78,11 +78,6 @@ def read_docx_content(file_path: str) -> str:
 
         content = '\n'.join(content_lines)
 
-        # 保存为 TXT 文件（与输入文件同名）
-        txt_path = os.path.splitext(file_path)[0] + '.txt'
-        with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-
         return content
     except ImportError:
         print("[错误] 未安装 python-docx 库，请运行: pip install python-docx")
