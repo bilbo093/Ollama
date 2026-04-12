@@ -6,7 +6,7 @@
 import os
 
 # ==================== 后端配置 ====================
-# LLM 服务地址，兼容 Ollama / llama.cpp / OpenAI / DeepSeek 等所有 OpenAI 兼容 API
+# LLM 服务地址，兼容 llama.cpp / OpenAI / DeepSeek 等所有 OpenAI 兼容 API
 # 直接修改此处即可，无需设置环境变量
 BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8080')
 

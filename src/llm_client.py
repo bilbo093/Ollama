@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 统一的 LLM 客户端
-使用 OpenAI 兼容协议，兼容 Ollama / llama.cpp / OpenAI / DeepSeek 等所有服务
+使用 OpenAI 兼容协议，兼容 llama.cpp / OpenAI / DeepSeek 等所有服务
 """
 
 import difflib

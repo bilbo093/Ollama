@@ -17,7 +17,7 @@ src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from ollama_processor import chat
+from llm_client import chat
 from file_io import read_file_content, validate_file_format, save_to_txt
 from config import PROCESSOR_CONFIGS, BASE_URL
 from docx_editor import process_document, apply_txt_to_document

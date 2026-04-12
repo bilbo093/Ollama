@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>系统设置 - OllamaDoc-Processor</title>
+    <title>系统设置 - LLM-Doc</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -18,7 +18,7 @@
                     <line x1="16" y1="17" x2="8" y2="17"/>
                     <polyline points="10 9 9 9 8 9"/>
                 </svg>
-                <h2>OllamaDoc</h2>
+                <h2>LLM-Doc</h2>
             </div>
             
             <nav class="nav-menu">
@@ -74,23 +74,23 @@
                             
                             <div class="form-group">
                                 <label class="form-label">服务地址</label>
-                                <input type="text" id="baseUrl" class="input" placeholder="http://127.0.0.1:11434/">
+                                <input type="text" id="baseUrl" class="input" placeholder="http://127.0.0.1:8080/">
                                 <p class="form-hint">
-                                    Ollama 本地服务：http://127.0.0.1:11434/<br>
+                                    llama.cpp 本地服务：http://127.0.0.1:8080/<br>
                                     DeepSeek 云端：https://api.deepseek.com/<br>
                                     通义千问：https://dashscope.aliyuncs.com/compatible-mode/v1
                                 </p>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label class="form-label">API Key</label>
                                 <input type="password" id="apiKey" class="input" placeholder="本地服务留空，云服务填写 API Key">
                             </div>
-                            
+
                             <div class="form-group">
                                 <label class="form-label">模型名称</label>
-                                <input type="text" id="modelName" class="input" placeholder="qwen2.5 或 deepseek-chat">
-                                <p class="form-hint">本地 Ollama 服务可留空，云服务需填写模型名称</p>
+                                <input type="text" id="modelName" class="input" placeholder="模型名称">
+                                <p class="form-hint">本地 llama.cpp 服务可留空，云服务需填写模型名称</p>
                             </div>
                             
                             <div class="form-actions">
@@ -149,14 +149,14 @@
                             </div>
                             
                             <div class="config-example">
-                                <h4>Ollama 本地</h4>
+                                <h4>llama.cpp 本地</h4>
                                 <dl>
                                     <dt>服务地址</dt>
-                                    <dd><code>http://127.0.0.1:11434/</code></dd>
+                                    <dd><code>http://127.0.0.1:8080/</code></dd>
                                     <dt>API Key</dt>
                                     <dd>留空</dd>
                                     <dt>模型</dt>
-                                    <dd>留空或 qwen2.5</dd>
+                                    <dd>留空或模型名称</dd>
                                 </dl>
                             </div>
                             
@@ -200,12 +200,11 @@
                             </div>
                             
                             <div class="help-content">
-                                <p><strong>如何启动 Ollama 服务：</strong></p>
-                                <pre>ollama serve
-ollama pull qwen2.5</pre>
-                                
+                                <p><strong>如何启动 llama.cpp 服务：</strong></p>
+                                <pre>./llama-server -m your-model.gguf</pre>
+
                                 <hr>
-                                
+
                                 <p><strong>配置文件位置：</strong></p>
                                 <pre>src/config.py</pre>
                             </div>

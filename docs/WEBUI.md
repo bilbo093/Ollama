@@ -26,7 +26,6 @@ python app.py
 
 | 后端 | 后端地址 | API Key | 模型名称 |
 |------|----------|---------|----------|
-| 本地 Ollama | `http://127.0.0.1:11434/` | 留空 | 留空 |
 | llama.cpp | `http://127.0.0.1:8080/` | 留空 | 留空 |
 | DeepSeek | `https://api.deepseek.com/` | 您的密钥 | `deepseek-chat` |
 | 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1/` | 您的密钥 | `qwen-plus` |

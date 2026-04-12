@@ -1,4 +1,4 @@
-# OllamaDoc-Processor
+# LLM-Doc-Processor
 
 ```
 ╔══════════════════════════╗
@@ -22,7 +22,7 @@
 
 - 🎯 **三种处理模式**：全文 / 章节 / 段落，灵活适配不同需求
 - 🌐 **现代化 Web UI**：拖拽上传、实时进度、任务管理
-- 🤖 **多后端支持**：Ollama、llama.cpp、DeepSeek、通义千问、OpenAI 等
+- 🤖 **多后端支持**：llama.cpp、DeepSeek、通义千问、OpenAI 等所有 OpenAI 兼容 API
 - 📝 **提示词系统**：支持版本管理和自定义编辑
 - 🔒 **隐私安全**：本地部署，数据无需外传
 
@@ -87,8 +87,8 @@ python main.py paragraph -i input.docx                   # 段落模式
 编辑 `src/config.py` 或通过 Web UI 系统设置页面配置：
 
 ```python
-# 本地 Ollama
-BASE_URL = 'http://127.0.0.1:11434/'
+# llama.cpp 本地服务
+BASE_URL = 'http://127.0.0.1:8080/'
 
 # 或云端服务
 BASE_URL = 'https://api.deepseek.com/'
@@ -106,7 +106,7 @@ MODEL_NAME = 'deepseek-chat'
 - **后端核心**：Python + requests + python-docx
 - **Web UI**：Flask + Flask-SocketIO
 - **前端**：原生 HTML/CSS/JavaScript
-- **LLM 后端**：Ollama / llama.cpp / DeepSeek / 通义千问 / OpenAI
+- **LLM 后端**：llama.cpp、DeepSeek、通义千问、OpenAI 等所有 OpenAI 兼容 API
 
 ## 📄 许可证
 

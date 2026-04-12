@@ -13,8 +13,8 @@ pip install -r requirements.txt
 编辑 `src/config.py` 文件：
 
 ```python
-# 本地 Ollama
-BASE_URL = 'http://127.0.0.1:11434/'
+# llama.cpp 本地服务
+BASE_URL = 'http://127.0.0.1:8080/'
 API_KEY = ''
 MODEL_NAME = ''
 
@@ -32,17 +32,17 @@ MODEL_NAME = 'qwen-plus'
 也可以通过环境变量配置（优先级更高）：
 
 ```bash
-export BASE_URL='http://127.0.0.1:11434/'
+export BASE_URL='http://127.0.0.1:8080/'
 export API_KEY=''
 export MODEL_NAME=''
 ```
 
 ### 启动 LLM 服务
 
-**使用本地 Ollama：**
+**使用本地 llama.cpp：**
 ```bash
-ollama serve
-ollama pull qwen2.5
+# 启动 llama.cpp 服务器
+./llama-server -m your-model.gguf
 ```
 
 **使用云端服务：** 无需本地启动，配置好 API Key 即可。

@@ -11,7 +11,7 @@
 import os
 import re
 from typing import Tuple, Optional
-from ollama_processor import chat
+from llm_client import chat
 from config import PROCESSOR_CONFIGS
 from file_io import save_to_txt
 from content_splitter import is_table_of_contents
@@ -58,14 +58,14 @@ def _skip_para(text: str) -> bool:
 
 def check_paragraph(paragraph_text: str) -> Tuple[str, str]:
     """
-    检查单个段落,返回 Ollama 的原始输出
-    复读检测和安全阈值由 Ollama 客户端自动处理
+    检查单个段落,返回 LLM 的原始输出
+    复读检测和安全阈值由 LLM 客户端自动处理
 
     Args:
         paragraph_text: 段落文本
 
     Returns:
-        Tuple[str, str]: (Ollama 原始输出, 段落文本)
+        Tuple[str, str]: (LLM 原始输出, 段落文本)
     """
     config = PROCESSOR_CONFIGS['paragraph']
 
@@ -81,11 +81,11 @@ def check_paragraph(paragraph_text: str) -> Tuple[str, str]:
     return result, paragraph_text
 
 
-def _parse_modified_text(ollama_result: str) -> str:
+def _parse_modified_text(llm_result: str) -> str:
     """
-    从 Ollama 输出中解析修改后的文本
+    从 LLM 输出中解析修改后的文本
 
-    Ollama 返回格式(由 GRAMMAR_CHECKER_PROMPT 定义):
+    LLM 返回格式(由 GRAMMAR_CHECKER_PROMPT 定义):
     #### 第一部分：修改后的文本
     ###MODIFIED_TEXT###
     {修改后的文本内容}
@@ -95,20 +95,20 @@ def _parse_modified_text(ollama_result: str) -> str:
     {修改说明}
 
     Args:
-        ollama_result: Ollama 返回的完整结果
+        llm_result: LLM 返回的完整结果
 
     Returns:
         str: 修改后的文本，如果没有修改则返回空字符串
     """
-    if not ollama_result:
+    if not llm_result:
         return ""
 
     # 检查是否有 ###MODIFIED_TEXT### 分隔符
-    if "###MODIFIED_TEXT###" not in ollama_result:
+    if "###MODIFIED_TEXT###" not in llm_result:
         return ""
 
     # 提取 MODIFIED_TEXT 之后的第一段内容
-    parts = ollama_result.split("###MODIFIED_TEXT###")
+    parts = llm_result.split("###MODIFIED_TEXT###")
     if len(parts) <= 1:
         return ""
 
@@ -123,7 +123,7 @@ def _parse_modified_text(ollama_result: str) -> str:
     return ""
 
 
-def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, ollama_result: str):
+def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, llm_result: str):
     """
     将修改建议保存到 txt 文件（只添加格式化分隔线）
 
@@ -131,7 +131,7 @@ def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, ollama_resul
         txt_file: txt 文件路径
         para_idx: 段落索引
         para_text: 原始段落文本
-        ollama_result: Ollama 的原始输出
+        llm_result: LLM 的原始输出
     """
     # 只保存前20个字方便用户定位段落
     preview = para_text[:20] + '...' if len(para_text) > 20 else para_text
@@ -141,7 +141,7 @@ def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, ollama_resul
     content += f"段落 {para_idx}\n"
     content += f"{'=' * 60}\n"
     content += f"原始内容（前20字）：{preview}\n"
-    content += f"Ollama 输出：\n{ollama_result}\n"
+    content += f"LLM 输出：\n{llm_result}\n"
 
     # 写入文件
     with open(txt_file, 'a', encoding='utf-8') as f:
@@ -157,8 +157,8 @@ def _parse_txt(txt_file: str) -> dict:
     段落 N
     ============================================================
     原始内容（前20字）：{前20个字}
-    Ollama 输出：
-    {Ollama 完整返回内容}
+    LLM 输出：
+    {LLM 完整返回内容}
 
     Args:
         txt_file: TXT 文件路径
@@ -179,7 +179,7 @@ def _parse_txt(txt_file: str) -> dict:
     para_pattern = re.compile(
         r'={60}\s*\n段落\s+(\d+)\s*\n={60}\s*\n'
         r'原始内容[^\n]*\n'
-        r'Ollama\s*输出：(.*?)(?=\n={60}\s*\n段落\s+\d+\s*\n={60}|\Z)',
+        r'LLM\s*输出：(.*?)(?=\n={60}\s*\n段落\s+\d+\s*\n={60}|\Z)',
         re.DOTALL
     )
 
@@ -187,10 +187,10 @@ def _parse_txt(txt_file: str) -> dict:
 
     for match in matches:
         para_idx = int(match.group(1))
-        ollama_output = match.group(2).strip()
+        llm_output = match.group(2).strip()
 
-        # 从 Ollama 输出中解析修改后的文本
-        modified_text = _parse_modified_text(ollama_output)
+        # 从 LLM 输出中解析修改后的文本
+        modified_text = _parse_modified_text(llm_output)
 
         if modified_text:
             modifications[para_idx] = modified_text
@@ -230,12 +230,12 @@ def process_document(provider: DocumentProvider, output_txt: Optional[str] = Non
             continue
 
         print(f"\r[段落 {idx} / {total_paragraphs}] 开始检查...", end='', flush=True)
-        ollama_result, original = check_paragraph(para_text)
+        llm_result, original = check_paragraph(para_text)
 
-        if output_txt and ollama_result:
-            _save_mods_to_txt(output_txt, idx, original, ollama_result)
+        if output_txt and llm_result:
+            _save_mods_to_txt(output_txt, idx, original, llm_result)
 
-        corrected_text = _parse_modified_text(ollama_result)
+        corrected_text = _parse_modified_text(llm_result)
         if corrected_text:
             modifications[idx] = corrected_text
 

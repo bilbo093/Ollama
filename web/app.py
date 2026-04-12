@@ -1,5 +1,5 @@
 """
-OllamaDoc-Processor Web UI - Flask 版本
+LLM-Doc-Processor Web UI - Flask 版本
 纯 Python 实现，无需 Node.js
 """
 import os
@@ -23,7 +23,7 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 # 导入现有模块
-from ollama_processor import LLMClient
+from llm_client import LLMClient
 from file_io import read_file_content, save_to_txt
 from config import PROCESSOR_CONFIGS
 from docx_editor import process_document, apply_txt_to_document, is_ref_section, _skip_para, _save_mods_to_txt, _parse_modified_text
@@ -76,7 +76,7 @@ def llm_chat(messages, task_id=None):
 
 # 创建 Flask 应用
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'ollama-doc-processor-secret-key'
+app.config['SECRET_KEY'] = 'llm-doc-processor-secret-key'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 
 # SocketIO
@@ -1225,12 +1225,12 @@ def run_paragraph_mode(task_id, input_file, version):
         config = PROCESSOR_CONFIGS['paragraph']
         prompt = config['prompt_template'].format(content=para_text)
         messages = [config['role'], {'role': 'user', 'content': prompt}]
-        ollama_result = llm_chat(messages, task_id=task_id)
+        llm_result = llm_chat(messages, task_id=task_id)
         original = para_text
 
-        if ollama_result:
-            _save_mods_to_txt(output_txt, idx, original, ollama_result)
-            corrected_text = _parse_modified_text(ollama_result)
+        if llm_result:
+            _save_mods_to_txt(output_txt, idx, original, llm_result)
+            corrected_text = _parse_modified_text(llm_result)
             if corrected_text:
                 modifications[idx] = corrected_text
 
@@ -1310,7 +1310,7 @@ if __name__ == '__main__':
     atexit.register(lambda: save_tasks_to_file())
 
     print("=" * 60)
-    print("  OllamaDoc-Processor Web UI")
+    print("  LLM-Doc-Processor Web UI")
     print("=" * 60)
     print()
     print("  访问地址: http://localhost:5000")

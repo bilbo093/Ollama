@@ -1,5 +1,5 @@
 /**
- * OllamaDoc-Processor Web UI - JavaScript
+ * LLM-Doc-Processor Web UI - JavaScript
  */
 
 // 全局状态
