@@ -813,6 +813,29 @@ async function saveConfig() {
     }
 }
 
+// ==================== 服务管理 ====================
+
+function shutdownServer() {
+    if (!confirm('确定要关闭服务吗？\n\n关闭后需要通过 start-web.bat 重新启动。')) return;
+    fetch('/api/shutdown', { method: 'POST' })
+        .then(() => {
+            document.body.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f5f6fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                    <div style="text-align:center;">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#67c23a" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <h2 style="color:#303133;margin:16px 0 8px;">服务已关闭</h2>
+                        <p style="color:#909399;">你可以安全地关闭此页面</p>
+                    </div>
+                </div>`;
+        })
+        .catch(() => {
+            alert('服务已关闭');
+        });
+}
+
 // ==================== 通知 ====================
 
 function showNotification(message, type = 'info') {

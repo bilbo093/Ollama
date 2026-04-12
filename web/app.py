@@ -8,8 +8,19 @@ import uuid
 import threading
 import time
 import hashlib
+import logging
 from pathlib import Path
 from datetime import datetime
+
+# 配置日志输出到文件（pythonw 无控制台窗口，print 不可见）
+_log_file = Path(__file__).parent / "app.log"
+logging.basicConfig(
+    filename=str(_log_file),
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    encoding='utf-8'
+)
+logger = logging.getLogger(__name__)
 
 from flask import (
     Flask, render_template, request, jsonify, 
@@ -137,7 +148,7 @@ def save_tasks_to_file():
         with open(TASKS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[错误] 保存任务失败: {e}")
+        logger.error(f"[错误] 保存任务失败: {e}")
 
 
 def load_tasks_from_file():
@@ -157,9 +168,9 @@ def load_tasks_from_file():
         for task_id, logs in data.get('logs', {}).items():
             task_logs[task_id] = logs
 
-        print(f"[信息] 已加载 {len(tasks)} 个历史任务")
+        logger.info(f"[信息] 已加载 {len(tasks)} 个历史任务")
     except Exception as e:
-        print(f"[错误] 加载任务失败: {e}")
+        logger.error(f"[错误] 加载任务失败: {e}")
 
 
 def check_cancelled(task_id):
@@ -1032,7 +1043,7 @@ def run_paragraph_mode(task_id, input_file, version):
             'role': {'role': 'system', 'content': prompt_data['role']},
             'prompt_template': prompt_data['prompt'],
         }
-        print(f"[信息] 使用段落模式版本: {version}")
+        logger.info(f"[信息] 使用段落模式版本: {version}")
     except Exception as e:
         tasks[task_id].update({
             'status': 'failed',
@@ -1272,12 +1283,12 @@ def emit_log(task_id, log_type, message):
 # SocketIO 事件处理
 @socketio.on('connect')
 def handle_connect():
-    print('客户端已连接')
+    logger.info('客户端已连接')
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('客户端已断开连接')
+    logger.info('客户端已断开连接')
 
 
 @socketio.on('subscribe_task')
@@ -1300,22 +1311,38 @@ def handle_subscribe(data):
                 })
 
 
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown():
+    """关闭服务"""
+    import os
+    logger.info('服务正在关闭...')
+    # 延迟关闭，让响应先返回
+    def _shutdown():
+        time.sleep(0.5)
+        os._exit(0)
+    threading.Thread(target=_shutdown, daemon=True).start()
+    return jsonify({'success': True, 'message': '服务正在关闭...'})
+
+
 if __name__ == '__main__':
+    import traceback
     import atexit
-    
-    # 启动时加载历史任务
-    load_tasks_from_file()
-    
-    # 应用退出时保存当前任务状态
-    atexit.register(lambda: save_tasks_to_file())
 
-    print("=" * 60)
-    print("  LLM-Doc-Processor Web UI")
-    print("=" * 60)
-    print()
-    print("  访问地址: http://localhost:5000")
-    print("  按 Ctrl+C 停止服务")
-    print()
-    print("=" * 60)
+    # 捕获所有启动异常，写入文件（pythonw 无控制台）
+    try:
+        # 启动时加载历史任务
+        load_tasks_from_file()
 
-    socketio.run(app, host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+        # 应用退出时保存当前任务状态
+        atexit.register(lambda: save_tasks_to_file())
+
+        logger.info("=" * 60)
+        logger.info("  LLM-Doc-Processor Web UI")
+        logger.info("=" * 60)
+        logger.info("  访问地址: http://localhost:5000")
+        logger.info("  按 Ctrl+C 停止服务")
+
+        socketio.run(app, host='127.0.0.1', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+    except Exception as e:
+        with open(Path(__file__).parent / "startup_error.log", "w", encoding="utf-8") as f:
+            f.write(traceback.format_exc())
