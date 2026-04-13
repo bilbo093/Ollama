@@ -194,20 +194,33 @@ async function loadAllVersions() {
 // 模式切换时显示对应的版本选择框
 function updateVersionVisibility(mode) {
     const modes = ['full', 'chapter', 'paragraph'];
-    
+
     modes.forEach(m => {
         const section = document.getElementById(`versionSection-${m}`);
         if (section) {
             section.style.display = m === mode ? 'block' : 'none';
         }
     });
+
+    // 段落模式禁用输出文件名输入框
+    const outputFilenameInput = document.getElementById('outputFilename');
+    if (outputFilenameInput) {
+        if (mode === 'paragraph') {
+            outputFilenameInput.disabled = true;
+            outputFilenameInput.value = '';
+            outputFilenameInput.placeholder = '段落模式使用默认命名：{文件名}_grammar.txt';
+        } else {
+            outputFilenameInput.disabled = false;
+            outputFilenameInput.placeholder = '留空则按默认规则自动生成';
+        }
+    }
 }
 
 // 修改 initModeChange 函数
 function initModeChange() {
     const modeRadios = document.querySelectorAll('input[name="mode"]');
     const modeDesc = document.getElementById('modeDesc');
-    
+
     if (!modeRadios.length) return;
 
     const descriptions = {
@@ -216,7 +229,7 @@ function initModeChange() {
         paragraph: '段落模式：按段落拆分后逐段送入 LLM，适用于语法检查和润色'
     };
 
-    // 初始化时根据当前选中模式显示版本框
+    // 初始化时根据当前选中模式显示版本框和禁用状态
     const checkedMode = document.querySelector('input[name="mode"]:checked');
     if (checkedMode) {
         updateVersionVisibility(checkedMode.value);
@@ -259,11 +272,17 @@ async function startProcess() {
         // 获取配置
         const mode = document.querySelector('input[name="mode"]:checked').value;
         const version = document.getElementById(`version-${mode}`)?.value || 'default';
-        const outputFilename = document.getElementById('outputFilename')?.value || '';
+        let outputFilename = document.getElementById('outputFilename')?.value?.trim() || '';
+        
+        // 去除扩展名（用户不能指定后缀）
+        outputFilename = outputFilename.replace(/\.[^/.]+$/, '');
 
         // 直接使用已上传的文件ID
         const fileId = selectedFile.file_id;
         const displayFilename = selectedFile.original_filename;
+
+        // 生成随机 task_id
+        const taskId = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 
         // 创建处理任务
         showNotification('正在创建处理任务...', 'info');
@@ -271,7 +290,8 @@ async function startProcess() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                task_id: fileId,
+                task_id: taskId,
+                file_id: fileId,
                 mode: mode,
                 version: version,
                 original_filename: displayFilename.replace(/\.[^/.]+$/, ""),
@@ -289,7 +309,7 @@ async function startProcess() {
 
         // 跳转到任务页面
         setTimeout(() => {
-            window.location.href = `/task/${fileId}`;
+            window.location.href = `/task/${taskId}`;
         }, 500);
 
     } catch (error) {
@@ -383,7 +403,7 @@ async function loadTaskStatus(taskId) {
     try {
         const response = await fetch(`/api/tasks/${taskId}`);
         const data = await response.json();
-        
+
         if (data.success) {
             updateTaskUI(data.task);
         }
@@ -393,6 +413,9 @@ async function loadTaskStatus(taskId) {
 }
 
 function updateTaskUI(task) {
+    // 保存当前模式到全局
+    window.currentTaskMode = task.mode;
+
     // 更新任务信息
     const modeEl = document.getElementById('taskMode');
     const statusEl = document.getElementById('taskStatus');
@@ -404,6 +427,7 @@ function updateTaskUI(task) {
     const restartBtn = document.getElementById('restartBtn');
     const previewBtn = document.getElementById('previewBtn');
     const downloadBtn = document.getElementById('downloadBtn');
+    const generateDocxBtn = document.getElementById('generateDocxBtn');
     const homeBtn = document.getElementById('homeBtn');
     const errorAlert = document.getElementById('errorAlert');
     const errorMessage = document.getElementById('errorMessage');
@@ -436,7 +460,7 @@ function updateTaskUI(task) {
 
     // 显示/隐藏按钮
     if (cancelBtn) {
-        cancelBtn.style.display = task.status === 'processing' ? 'inline-flex' : 'none';
+        cancelBtn.style.display = task.status === 'processing' || task.status === 'waiting' ? 'inline-flex' : 'none';
     }
 
     if (restartBtn) {
@@ -451,8 +475,12 @@ function updateTaskUI(task) {
         previewBtn.style.display = task.status === 'completed' ? 'inline-flex' : 'none';
     }
 
+    if (generateDocxBtn) {
+        generateDocxBtn.style.display = (task.status === 'completed' && task.mode === 'paragraph') ? 'inline-flex' : 'none';
+    }
+
     if (homeBtn) {
-        homeBtn.style.display = task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled' ? 'inline-flex' : 'none';
+        homeBtn.style.display = ['completed', 'failed', 'cancelled'].includes(task.status) ? 'inline-flex' : 'none';
     }
 
     // 显示错误
@@ -555,6 +583,32 @@ function downloadResult() {
     window.open(`/api/download/${taskId}?type=output`, '_blank');
 }
 
+async function generateDocx() {
+    const taskId = document.getElementById('taskId')?.textContent;
+    if (!taskId) return;
+
+    showNotification('正在生成 DOCX...', 'info');
+
+    try {
+        const response = await fetch(`/api/generate-docx/${taskId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification(data.message, 'success');
+            // 打开下载链接
+            window.open(data.download_url, '_blank');
+        } else {
+            showNotification('生成失败: ' + data.message, 'error');
+        }
+    } catch (error) {
+        showNotification('生成失败: ' + error.message, 'error');
+    }
+}
+
 // ==================== 预览功能 ====================
 
 let previewLoaded = false;
@@ -600,39 +654,15 @@ async function loadPreview() {
             infoEl.textContent = `${data.filename} (${formatFileSize(data.size)})`;
         }
 
-        if (data.type === 'txt') {
-            // 显示 TXT 文件内容
-            if (contentEl) {
-                const pre = document.createElement('pre');
-                pre.className = 'preview-text-content';
-                pre.textContent = data.content;
-                contentEl.innerHTML = '';
-                contentEl.appendChild(pre);
-            }
-            previewLoaded = true;
-        } else {
-            // 非文本文件提示
-            if (contentEl) {
-                contentEl.innerHTML = `
-                    <div class="preview-binary">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                        </svg>
-                        <p>${data.message || '此文件类型需要下载后查看'}</p>
-                        <button class="btn btn-primary" onclick="downloadResult()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7 10 12 15 17 10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            下载文件
-                        </button>
-                    </div>
-                `;
-            }
-            previewLoaded = true;
+        // 显示 TXT 文件内容
+        if (contentEl) {
+            const pre = document.createElement('pre');
+            pre.className = 'preview-text-content';
+            pre.textContent = data.content;
+            contentEl.innerHTML = '';
+            contentEl.appendChild(pre);
         }
+        previewLoaded = true;
     } catch (error) {
         if (contentEl) {
             contentEl.innerHTML = `<div class="preview-error">加载失败: ${error.message}</div>`;

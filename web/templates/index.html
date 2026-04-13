@@ -47,6 +47,13 @@
             </nav>
             
             <div class="sidebar-footer">
+                <button class="btn btn-text btn-shutdown" onclick="shutdownServer()" title="关闭服务">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                        <line x1="12" y1="2" x2="12" y2="12"/>
+                    </svg>
+                    关闭服务
+                </button>
                 <span class="version">v1.0.0</span>
             </div>
         </aside>
@@ -55,13 +62,6 @@
         <main class="main-content">
             <header class="header">
                 <h1>学术文档智能处理</h1>
-                <button class="btn btn-text" onclick="shutdownServer()" style="color: #f56c6c;" title="关闭服务">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
-                        <line x1="12" y1="2" x2="12" y2="12"/>
-                    </svg>
-                    关闭服务
-                </button>
             </header>
             
             <div class="content-wrapper">
@@ -209,7 +209,7 @@
                             
                             <div class="config-section">
                                 <label class="config-label">输出文件名（可选）</label>
-                                <input type="text" id="outputFilename" class="input" placeholder="留空则自动生成">
+                                <input type="text" id="outputFilename" class="input" placeholder="留空则按默认规则自动生成">
                             </div>
                             
                             <button class="btn btn-primary btn-large btn-block" id="processBtn" disabled>

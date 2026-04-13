@@ -80,6 +80,36 @@ body {
     padding: 16px 20px;
     text-align: center;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+}
+
+.btn-shutdown {
+    color: #fff !important;
+    background: #f56c6c;
+    font-size: 14px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    font-weight: 500;
+    width: 80%;
+    max-width: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.btn-shutdown:hover {
+    background: #e05555 !important;
+    box-shadow: 0 4px 12px rgba(245, 108, 108, 0.5);
+    transform: translateY(-1px);
+}
+
+.btn-shutdown:active {
+    transform: translateY(0);
 }
 
 .version {
@@ -349,6 +379,16 @@ body {
 .btn-success:hover:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4);
+}
+
+.btn-warning {
+    background: linear-gradient(135deg, #e6a23c 0%, #ebb563 100%);
+    color: #fff;
+}
+
+.btn-warning:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(230, 162, 60, 0.4);
 }
 
 .btn-danger {
@@ -891,6 +931,26 @@ body {
     line-height: 1.6;
 }
 
+.txt-choice-progress {
+    background: #f5f7fa;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+}
+
+.txt-choice-progress .progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: #606266;
+}
+
+.txt-choice-progress .progress-info strong {
+    color: #409EFF;
+    font-size: 15px;
+}
+
 .choice-options {
     display: flex;
     flex-direction: column;
@@ -939,6 +999,15 @@ body {
 .choice-btn.cancel:hover {
     border-color: #f56c6c;
     background: #fef0f0;
+}
+
+.choice-btn.continue {
+    border-left: 4px solid #e6a23c;
+}
+
+.choice-btn.continue:hover {
+    border-color: #e6a23c;
+    background: #fdf6ec;
 }
 
 .choice-btn small {

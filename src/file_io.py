@@ -53,28 +53,20 @@ def read_docx_content(file_path: str) -> str:
 
         doc = Document(file_path)
 
-        # 按顺序提取所有内容（段落和表格）
         content_lines = []
-
-        for element in doc.element.body:
-            if element.tag.endswith('p'):  # 段落
-                for para in doc.paragraphs:
-                    if para._element == element:
-                        if para.text.strip():
-                            content_lines.append(para.text)
-                        break
-            elif element.tag.endswith('tbl'):  # 表格
-                for table in doc.tables:
-                    if table._element == element:
-                        for row in table.rows:
-                            row_text = []
-                            for cell in row.cells:
-                                if cell.text.strip():
-                                    row_text.append(cell.text.strip())
-                            if row_text:
-                                content_lines.append(' | '.join(row_text))
-                        content_lines.append('')  # 表格后空一行
-                        break
+        
+        for para in doc.paragraphs:
+            content_lines.append(para.text)
+        
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    if cell.text.strip():
+                        row_text.append(cell.text.strip())
+                if row_text:
+                    content_lines.append(' | '.join(row_text))
+            content_lines.append('')
 
         content = '\n'.join(content_lines)
 

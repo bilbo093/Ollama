@@ -37,35 +37,32 @@ if str(src_dir) not in sys.path:
 from llm_client import LLMClient
 from file_io import read_file_content, save_to_txt
 from config import PROCESSOR_CONFIGS
-from docx_editor import process_document, apply_txt_to_document, is_ref_section, _skip_para, _save_mods_to_txt, _parse_modified_text
+from docx_editor import process_document, apply_txt_to_document, is_ref_section, _skip_para, _save_mods_to_txt, _parse_modified_text, get_completed_paragraphs
 from document_provider import create_provider
 from content_splitter import split_content_by_chapters
 
 
 class WebLLMClient(LLMClient):
     """Web 环境下的 LLM 客户端，支持实时进度推送"""
-    
+
     def __init__(self, task_id=None):
         super().__init__()
         self.task_id = task_id
-        self._last_emit_count = 0
-    
-    def _emit_progress(self):
-        """推送进度到前端"""
-        if self.task_id and self._char_count - self._last_emit_count >= 100:
-            # 每 100 字符推送一次进度
+
+    def _emit_progress(self, token=""):
+        """推送当前 token 到前端"""
+        if self.task_id and token:
             socketio.emit('llm_progress', {
                 'task_id': self.task_id,
                 'char_count': self._char_count,
-                'preview': self._full_content[-100:].replace('\n', ' ')
+                'preview': token.replace('\n', ' ')
             }, room=self.task_id)
-            self._last_emit_count = self._char_count
 
 
 def llm_chat(messages, task_id=None):
     """
     LLM 调用函数，支持 Web 环境下的实时进度推送
-    
+
     Args:
         messages: 消息列表
         task_id: 任务 ID（可选），如果提供则推送进度
@@ -73,13 +70,6 @@ def llm_chat(messages, task_id=None):
     if task_id:
         # Web 环境，使用带进度推送的客户端
         client = WebLLMClient(task_id=task_id)
-        # 重写 _check_repeat 方法以推送进度
-        original_check = client._check_repeat
-        def check_with_progress():
-            result = original_check()
-            client._emit_progress()
-            return result
-        client._check_repeat = check_with_progress
         return client.chat(messages)
     else:
         # 普通环境
@@ -255,21 +245,31 @@ def process_document_api():
     """创建处理任务 API"""
     data = request.json
     task_id = data.get('task_id')
+    file_id = data.get('file_id')  # 文件指纹 ID
     mode = data.get('mode')
     version = data.get('version', 'default')
     original_filename = data.get('original_filename')  # 从前端获取原始文件名
+    
+    # 处理自定义输出文件名（去除扩展名）
+    custom_output = data.get('output_filename', '').strip()
+    if custom_output:
+        custom_output = Path(custom_output).stem  # 只保留文件名，去除扩展名
 
     if not task_id or not mode:
         return jsonify({'success': False, 'message': '缺少必要参数'}), 400
 
-    # 如果没有提供原始文件名，使用 task_id 作为 fallback
-    if not original_filename:
-        original_filename = task_id
+    # 如果没有提供 file_id，尝试从 task_id 中提取（向后兼容）
+    if not file_id:
+        file_id = task_id
 
-    # 查找文件
+    # 如果没有提供原始文件名，使用 file_id 作为 fallback
+    if not original_filename:
+        original_filename = file_id
+
+    # 查找文件（使用 file_id）
     input_file = None
     for ext in ['.txt', '.docx']:
-        file_path = UPLOAD_DIR / f"{task_id}{ext}"
+        file_path = UPLOAD_DIR / f"{file_id}{ext}"
         if file_path.exists():
             input_file = str(file_path)
             break
@@ -280,12 +280,13 @@ def process_document_api():
     # 创建任务
     tasks[task_id] = {
         'task_id': task_id,
+        'file_id': file_id,  # 存储文件指纹 ID，用于重启和下载
         'status': 'pending',
         'mode': mode,
         'version': version,
         'original_filename': original_filename,  # 使用前端传递的原始文件名
         'input_filename': Path(input_file).name,
-        'output_filename': None,
+        'output_filename': custom_output if custom_output else None,  # 保存自定义输出文件名
         'progress': 0,
         'current': 0,
         'total': 0,
@@ -302,7 +303,7 @@ def process_document_api():
     # 启动后台处理线程
     thread = threading.Thread(
         target=run_task,
-        args=(task_id, mode, version, input_file)  # 传递 version 参数
+        args=(task_id, mode, version, input_file, custom_output)  # 传递 version 和 output_filename 参数
     )
     thread.daemon = True
     thread.start()
@@ -375,10 +376,11 @@ def restart_task_api(task_id):
             'message': '只能重启已完成、失败或取消的任务'
         }), 400
 
-    # 查找输入文件
+    # 查找输入文件（使用 task 中存储的 file_id）
+    file_id = task.get('file_id', task_id)  # 向后兼容旧任务
     input_file = None
     for ext in ['.txt', '.docx']:
-        file_path = UPLOAD_DIR / f"{task_id}{ext}"
+        file_path = UPLOAD_DIR / f"{file_id}{ext}"
         if file_path.exists():
             input_file = str(file_path)
             break
@@ -473,8 +475,14 @@ def download_result(task_id):
 
     if file_type == 'input':
         # 下载原始文件
+        if task_id not in tasks:
+            return jsonify({'success': False, 'message': '任务不存在'}), 404
+        
+        task = tasks[task_id]
+        file_id = task.get('file_id', task_id)  # 向后兼容旧任务
+        
         for ext in ['.txt', '.docx']:
-            file_path = UPLOAD_DIR / f"{task_id}{ext}"
+            file_path = UPLOAD_DIR / f"{file_id}{ext}"
             if file_path.exists():
                 return send_file(
                     str(file_path),
@@ -484,27 +492,26 @@ def download_result(task_id):
         return jsonify({'success': False, 'message': '原始文件不存在'}), 404
 
     else:
-        # 下载输出文件
-        original_name = tasks.get(task_id, {}).get('original_filename', task_id)
-        
-        for ext in ['.docx', '.txt']:
-            for pattern in [
-                f"{original_name}_fixed{ext}",
-                f"{original_name}_output{ext}",
-                f"{task_id}_fixed{ext}",  # 向后兼容旧任务
-                f"{task_id}_output{ext}",
-                f"{original_name}_grammar{ext}",
-                f"{task_id}_grammar{ext}",
-            ]:
-                file_path = RESULTS_DIR / pattern
-                if file_path.exists():
-                    return send_file(
-                        str(file_path),
-                        as_attachment=True,
-                        download_name=pattern
-                    )
+        # 下载输出文件（统一使用 output_filename）
+        if task_id not in tasks:
+            return jsonify({'success': False, 'message': '任务不存在'}), 404
 
-        return jsonify({'success': False, 'message': '输出文件不存在'}), 404
+        task = tasks[task_id]
+        filename = task.get('output_filename')
+
+        if not filename:
+            return jsonify({'success': False, 'message': '输出文件未生成'}), 404
+
+        file_path = RESULTS_DIR / filename
+
+        if not file_path.exists():
+            return jsonify({'success': False, 'message': '输出文件不存在'}), 404
+
+        return send_file(
+            str(file_path),
+            as_attachment=True,
+            download_name=filename
+        )
 
 
 @app.route('/api/preview/<task_id>')
@@ -514,45 +521,101 @@ def preview_result(task_id):
         return jsonify({'success': False, 'message': '任务不存在'}), 404
 
     task = tasks[task_id]
-    original_name = task.get('original_filename', task_id)
-    output_filename = task.get('output_filename')
+    txt_filename = task.get('output_filename')
 
-    if not output_filename:
+    if not txt_filename:
         return jsonify({'success': False, 'message': '输出文件未生成'}), 404
 
-    file_path = RESULTS_DIR / output_filename
+    file_path = RESULTS_DIR / txt_filename
 
     if not file_path.exists():
-        return jsonify({'success': False, 'message': '输出文件不存在'}), 404
+        return jsonify({'success': False, 'message': f'文件不存在：{txt_filename}'}), 404
 
-    # 检查文件类型
-    file_ext = file_path.suffix.lower()
-
-    if file_ext == '.txt':
-        # 读取 TXT 文件内容
-        try:
-            content = file_path.read_text(encoding='utf-8')
-            return jsonify({
-                'success': True,
-                'type': 'txt',
-                'content': content,
-                'filename': output_filename,
-                'size': file_path.stat().st_size
-            })
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': f'读取文件失败: {str(e)}'
-            }), 500
-    else:
-        # DOCX 等非文本文件，返回文件信息但不返回内容
+    # 读取 TXT 文件内容
+    try:
+        content = file_path.read_text(encoding='utf-8')
         return jsonify({
             'success': True,
-            'type': 'binary',
-            'filename': output_filename,
-            'size': file_path.stat().st_size,
-            'message': f'{file_ext.upper()} 文件需要下载后查看'
+            'type': 'txt',
+            'content': content,
+            'filename': txt_filename,
+            'size': file_path.stat().st_size
         })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'读取文件失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/generate-docx/<task_id>', methods=['POST'])
+def generate_docx(task_id):
+    """段落模式：从 grammar.txt 生成并下载 DOCX"""
+    if task_id not in tasks:
+        return jsonify({'success': False, 'message': '任务不存在'}), 404
+
+    task = tasks[task_id]
+    original_name = task.get('original_filename', task_id)
+    file_id = task.get('file_id', task_id)
+
+    # 查找输入文件
+    input_file = None
+    for ext in ['.txt', '.docx']:
+        file_path = UPLOAD_DIR / f"{file_id}{ext}"
+        if file_path.exists():
+            input_file = str(file_path)
+            break
+
+    if not input_file:
+        return jsonify({'success': False, 'message': '原始输入文件不存在'}), 404
+
+    # 查找 grammar.txt
+    txt_filename = f"{original_name}_grammar.txt"
+    txt_path = RESULTS_DIR / txt_filename
+
+    if not txt_path.exists():
+        return jsonify({'success': False, 'message': f'grammar.txt 不存在：{txt_filename}'}), 404
+
+    try:
+        # 创建 provider 并应用修改
+        provider = create_provider(input_file)
+        output_path = str(RESULTS_DIR / f"{original_name}_fixed.docx")
+
+        from docx_editor import apply_txt_to_document_with_output
+        _, modified_count = apply_txt_to_document_with_output(provider, str(txt_path), output_path)
+
+        # 更新任务的 output_filename（可选，不影响下载）
+        task['docx_filename'] = f"{original_name}_fixed.docx"
+
+        return jsonify({
+            'success': True,
+            'message': f'已生成 DOCX，修改 {modified_count} 个段落',
+            'download_url': f'/api/download-docx/{task_id}'
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'生成 DOCX 失败: {str(e)}'}), 500
+
+
+@app.route('/api/download-docx/<task_id>')
+def download_docx(task_id):
+    """下载段落模式生成的 DOCX"""
+    if task_id not in tasks:
+        return jsonify({'success': False, 'message': '任务不存在'}), 404
+
+    task = tasks[task_id]
+    original_name = task.get('original_filename', task_id)
+    docx_filename = task.get('docx_filename', f"{original_name}_fixed.docx")
+    file_path = RESULTS_DIR / docx_filename
+
+    if not file_path.exists():
+        return jsonify({'success': False, 'message': 'DOCX 文件不存在'}), 404
+
+    return send_file(
+        str(file_path),
+        as_attachment=True,
+        download_name=docx_filename
+    )
 
 
 @app.route('/api/uploaded-files')
@@ -839,12 +902,12 @@ def delete_prompt_version():
 def submit_txt_choice(task_id):
     """提交用户对已存在 TXT 文件的选择"""
     data = request.json
-    choice = data.get('choice')  # 'reuse', 'regenerate', 'cancel'
+    choice = data.get('choice')  # 'reuse', 'regenerate', 'continue', 'cancel'
 
-    if choice not in ['reuse', 'regenerate', 'cancel']:
+    if choice not in ['reuse', 'regenerate', 'continue', 'cancel']:
         return jsonify({
             'success': False,
-            'message': '无效的选择，必须是 reuse、regenerate 或 cancel'
+            'message': '无效的选择，必须是 reuse、regenerate、continue 或 cancel'
         }), 400
 
     # 存储选择
@@ -860,15 +923,15 @@ def submit_txt_choice(task_id):
     })
 
 
-def run_task(task_id, mode, version, input_file):
+def run_task(task_id, mode, version, input_file, output_filename=None):
     """后台运行任务"""
     try:
         if mode == 'full':
-            run_full_mode(task_id, input_file, version)
+            run_full_mode(task_id, input_file, version, output_filename)
         elif mode == 'chapter':
-            run_chapter_mode(task_id, input_file, version)
+            run_chapter_mode(task_id, input_file, version, output_filename)
         elif mode == 'paragraph':
-            run_paragraph_mode(task_id, input_file, version)
+            run_paragraph_mode(task_id, input_file, version, output_filename)
     except Exception as e:
         # 检查是否是取消异常
         if '任务已被用户取消' in str(e):
@@ -900,11 +963,11 @@ def run_task(task_id, mode, version, input_file):
             save_tasks_to_file()
 
 
-def run_full_mode(task_id, input_file, version='default'):
+def run_full_mode(task_id, input_file, version='default', output_filename=None):
     """全文模式处理"""
     # 从 prompts 模块动态加载指定版本
     from prompts.loader import get_prompt
-    
+
     try:
         prompt_data = get_prompt('full', version)
         config = {
@@ -920,6 +983,68 @@ def run_full_mode(task_id, input_file, version='default'):
         emit_log(task_id, 'error', f'[错误] 加载提示词失败: {str(e)}')
         return
 
+    original_name = tasks[task_id].get('original_filename', Path(input_file).stem)
+    
+    # 如果有自定义文件名，使用它；否则按默认规则生成
+    if output_filename:
+        base_name = output_filename
+    else:
+        base_name = f"{original_name}_output"
+    
+    output_file = str(RESULTS_DIR / f"{base_name}.txt")
+
+    # 检测已存在的输出文件
+    if Path(output_file).exists():
+        socketio.emit('existing_txt_found', {
+            'task_id': task_id,
+            'txt_file': output_file,
+            'message': f'检测到已存在的输出文件：{Path(output_file).name}'
+        }, room=task_id)
+
+        event = threading.Event()
+        task_events[task_id] = event
+
+        tasks[task_id].update({
+            'status': 'waiting',
+            'message': '等待用户选择处理方式...',
+            'progress': 0,
+            'existing_txt': output_file,
+        })
+        emit_log(task_id, 'log', f'[发现] 已存在的输出文件：{output_file}')
+        emit_log(task_id, 'choice_needed', '请选择：1.复用现有TXT 2.重新生成 3.取消')
+
+        event.wait(timeout=300)
+        choice = task_choices.get(task_id, 'cancel')
+
+        del task_events[task_id]
+        if task_id in task_choices:
+            del task_choices[task_id]
+
+        if choice == 'reuse':
+            emit_log(task_id, 'log', '[复用] 使用现有输出文件，跳过 LLM...')
+            tasks[task_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'message': '已复用现有输出文件',
+                'output_filename': f"{base_name}.txt",
+                'completed_at': datetime.now().isoformat()
+            })
+            emit_log(task_id, 'completed', '[完成] 已复用现有输出文件')
+            save_tasks_to_file()
+            return
+
+        elif choice == 'cancel':
+            tasks[task_id].update({
+                'status': 'cancelled',
+                'message': '用户取消操作',
+                'completed_at': datetime.now().isoformat()
+            })
+            emit_log(task_id, 'log', '[取消] 操作已取消')
+            save_tasks_to_file()
+            return
+
+        emit_log(task_id, 'log', '[重新生成] 开始重新生成...')
+
     tasks[task_id].update({
         'status': 'processing',
         'message': '正在读取文件...',
@@ -934,25 +1059,24 @@ def run_full_mode(task_id, input_file, version='default'):
         'progress': 30
     })
     emit_log(task_id, 'log', '[LLM] 正在生成学术摘要...')
-    
+
     # 检查取消
     check_cancelled(task_id)
 
     prompt = config['prompt_template'].format(content=content)
     messages = [config['role'], {'role': 'user', 'content': prompt}]
     result = llm_chat(messages, task_id=task_id)
-    
+
     # LLM 调用后再次检查
     check_cancelled(task_id)
 
-    output_file = str(RESULTS_DIR / f"{tasks[task_id]['original_filename']}_output.txt")
     save_to_txt(result, output_file)
 
     tasks[task_id].update({
         'status': 'completed',
         'progress': 100,
         'message': '处理完成',
-        'output_filename': f"{tasks[task_id]['original_filename']}_output.txt",
+        'output_filename': f"{base_name}.txt",
         'completed_at': datetime.now().isoformat()
     })
     emit_log(task_id, 'completed', '[完成] 全文处理完成')
@@ -960,11 +1084,11 @@ def run_full_mode(task_id, input_file, version='default'):
     save_tasks_to_file()
 
 
-def run_chapter_mode(task_id, input_file, version='default'):
+def run_chapter_mode(task_id, input_file, version='default', output_filename=None):
     """章节模式处理"""
     # 从 prompts 模块动态加载指定版本
     from prompts.loader import get_prompt
-    
+
     try:
         prompt_data = get_prompt('chapter', version)
         config = {
@@ -979,6 +1103,68 @@ def run_chapter_mode(task_id, input_file, version='default'):
         })
         emit_log(task_id, 'error', f'[错误] 加载提示词失败: {str(e)}')
         return
+
+    original_name = tasks[task_id].get('original_filename', Path(input_file).stem)
+    
+    # 如果有自定义文件名，使用它；否则按默认规则生成
+    if output_filename:
+        base_name = output_filename
+    else:
+        base_name = f"{original_name}_output"
+    
+    output_file = str(RESULTS_DIR / f"{base_name}.txt")
+
+    # 检测已存在的输出文件
+    if Path(output_file).exists():
+        socketio.emit('existing_txt_found', {
+            'task_id': task_id,
+            'txt_file': output_file,
+            'message': f'检测到已存在的输出文件：{Path(output_file).name}'
+        }, room=task_id)
+
+        event = threading.Event()
+        task_events[task_id] = event
+
+        tasks[task_id].update({
+            'status': 'waiting',
+            'message': '等待用户选择处理方式...',
+            'progress': 0,
+            'existing_txt': output_file,
+        })
+        emit_log(task_id, 'log', f'[发现] 已存在的输出文件：{output_file}')
+        emit_log(task_id, 'choice_needed', '请选择：1.复用现有TXT 2.重新生成 3.取消')
+
+        event.wait(timeout=300)
+        choice = task_choices.get(task_id, 'cancel')
+
+        del task_events[task_id]
+        if task_id in task_choices:
+            del task_choices[task_id]
+
+        if choice == 'reuse':
+            emit_log(task_id, 'log', '[复用] 使用现有输出文件，跳过 LLM...')
+            tasks[task_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'message': '已复用现有输出文件',
+                'output_filename': f"{base_name}.txt",
+                'completed_at': datetime.now().isoformat()
+            })
+            emit_log(task_id, 'completed', '[完成] 已复用现有输出文件')
+            save_tasks_to_file()
+            return
+
+        elif choice == 'cancel':
+            tasks[task_id].update({
+                'status': 'cancelled',
+                'message': '用户取消操作',
+                'completed_at': datetime.now().isoformat()
+            })
+            emit_log(task_id, 'log', '[取消] 操作已取消')
+            save_tasks_to_file()
+            return
+
+        emit_log(task_id, 'log', '[重新生成] 开始重新生成...')
 
     tasks[task_id].update({
         'status': 'processing',
@@ -996,13 +1182,12 @@ def run_chapter_mode(task_id, input_file, version='default'):
     })
     emit_log(task_id, 'log', f'[信息] 识别到 {len(chapters)} 个章节')
 
-    output_file = str(RESULTS_DIR / f"{tasks[task_id]['original_filename']}_output.txt")
     save_to_txt("", output_file, "章节总结", mode='w')
 
     for idx, chapter in enumerate(chapters, 1):
         # 每个章节开始前检查取消
         check_cancelled(task_id)
-        
+
         tasks[task_id].update({
             'current': idx,
             'progress': int((idx / len(chapters)) * 90),
@@ -1024,7 +1209,7 @@ def run_chapter_mode(task_id, input_file, version='default'):
         'status': 'completed',
         'progress': 100,
         'message': f'处理完成，共 {len(chapters)} 个章节',
-        'output_filename': f"{tasks[task_id]['original_filename']}_output.txt",
+        'output_filename': f"{base_name}.txt",
         'completed_at': datetime.now().isoformat()
     })
     emit_log(task_id, 'completed', f'[完成] 共处理 {len(chapters)} 个章节')
@@ -1032,8 +1217,8 @@ def run_chapter_mode(task_id, input_file, version='default'):
     save_tasks_to_file()
 
 
-def run_paragraph_mode(task_id, input_file, version):
-    """段落模式处理"""
+def run_paragraph_mode(task_id, input_file, version, output_filename=None):
+    """段落模式处理（始终使用默认的 _grammar.txt 命名规则）"""
     from prompts.loader import get_prompt
 
     try:
@@ -1088,11 +1273,23 @@ def run_paragraph_mode(task_id, input_file, version):
                 break
 
     if existing_grammar_txt and Path(existing_grammar_txt).exists():
-        # 通知前端存在已存在的 TXT 文件
+        # 解析已完成的段落进度
+        completed_paragraphs = get_completed_paragraphs(existing_grammar_txt)
+        
+        # 读取文档获取总段落数
+        temp_provider = create_provider(input_file)
+        temp_paragraphs = temp_provider.read_paragraphs()
+        total_para_count = len(temp_paragraphs)
+        completed_count = len(completed_paragraphs)
+        
+        # 通知前端存在已存在的 TXT 文件，附带进度信息
         socketio.emit('existing_txt_found', {
             'task_id': task_id,
             'txt_file': existing_grammar_txt,
-            'message': f'检测到已存在的语法检查文件：{Path(existing_grammar_txt).name}'
+            'message': f'检测到已存在的语法检查文件：{Path(existing_grammar_txt).name}',
+            'completed': completed_count,
+            'total': total_para_count,
+            'remaining': total_para_count - completed_count
         }, room=task_id)
 
         # 创建等待事件
@@ -1101,23 +1298,26 @@ def run_paragraph_mode(task_id, input_file, version):
 
         tasks[task_id].update({
             'status': 'waiting',
-            'message': '等待用户选择处理方式...',
+            'message': f'等待用户选择处理方式...（已完成 {completed_count}/{total_para_count} 段落）',
             'progress': 0,
             'existing_txt': existing_grammar_txt,
+            'completed_paragraphs': list(completed_paragraphs),
+            'total_paragraphs': total_para_count,
         })
         emit_log(task_id, 'log', f'[发现] 已存在的语法检查文件：{existing_grammar_txt}')
-        emit_log(task_id, 'choice_needed', '请选择：1.复用现有TXT 2.重新检查 3.取消')
-        
+        emit_log(task_id, 'log', f'[进度] 已完成 {completed_count}/{total_para_count} 段落')
+        emit_log(task_id, 'choice_needed', '请选择：1.复用现有TXT 2.重新检查 3.继续完成 4.取消')
+
         # 等待用户选择（最多 5 分钟）
         event.wait(timeout=300)
-        
+
         choice = task_choices.get(task_id, 'cancel')
-        
+
         # 清理
         del task_events[task_id]
         if task_id in task_choices:
             del task_choices[task_id]
-        
+
         if choice == 'reuse':
             # 复用现有 TXT 生成 DOCX
             emit_log(task_id, 'log', '[复用] 使用现有 TXT 文件生成 DOCX...')
@@ -1165,7 +1365,7 @@ def run_paragraph_mode(task_id, input_file, version):
                 'status': 'completed',
                 'progress': 100,
                 'message': f'已从现有 TXT 生成 DOCX',
-                'output_filename': f"{original_name}_fixed{output_suffix}",
+                'output_filename': f"{original_name}_grammar.txt",
                 'completed_at': datetime.now().isoformat()
             })
             emit_log(task_id, 'completed', f'[完成] 已从现有 TXT 生成 DOCX')
@@ -1183,7 +1383,111 @@ def run_paragraph_mode(task_id, input_file, version):
             # 保存已取消的任务
             save_tasks_to_file()
             return
-        
+
+        elif choice == 'continue':
+            # 继续完成剩余段落
+            emit_log(task_id, 'log', f'[继续] 从上次中断点继续完成剩余段落...')
+            tasks[task_id].update({
+                'status': 'processing',
+                'message': '正在继续完成剩余段落...',
+                'progress': 10,
+            })
+            
+            # 使用断点续传模式继续处理
+            paragraphs = provider.read_paragraphs()
+            total_paragraphs = len(paragraphs)
+            completed_paragraphs_set = set(tasks[task_id].get('completed_paragraphs', []))
+
+            # 找到处理范围
+            process_until = total_paragraphs
+            for idx, text in enumerate(paragraphs):
+                if is_ref_section(text.strip()):
+                    process_until = idx
+
+            # 计算实际需要处理的段落数
+            remaining_count = 0
+            for idx in range(1, process_until + 1):
+                if idx not in completed_paragraphs_set and not _skip_para(paragraphs[idx - 1]):
+                    remaining_count += 1
+
+            tasks[task_id].update({
+                'total': process_until,
+                'message': f'处理范围：第 1 ~ {process_until} 段（已完成 {len(completed_paragraphs_set)} 段，剩余 {remaining_count} 段）'
+            })
+            emit_log(task_id, 'log', f'[信息] 处理范围：第 1 ~ {process_until} 段')
+            emit_log(task_id, 'log', f'[信息] 需要处理 {remaining_count} 个段落')
+
+            # 使用原始文件名生成 TXT 路径（追加模式）
+            original_name = tasks[task_id].get('original_filename', Path(input_file).stem)
+            output_txt = str(RESULTS_DIR / f"{original_name}_grammar.txt")
+
+            modifications = {}
+            processed_count = 0
+
+            for idx, para_text in enumerate(paragraphs[:process_until], 1):
+                # 每个段落前检查取消
+                check_cancelled(task_id)
+
+                # 跳过已完成的段落
+                if idx in completed_paragraphs_set:
+                    continue
+
+                if _skip_para(para_text):
+                    continue
+
+                processed_count += 1
+                progress = int((processed_count / remaining_count) * 90) + 10
+                tasks[task_id].update({
+                    'current': idx,
+                    'progress': progress,
+                    'message': f'检查段落 {idx}/{process_until} (第 {processed_count}/{remaining_count} 段)'
+                })
+
+                # 使用带进度推送的 LLM 调用
+                config = PROCESSOR_CONFIGS['paragraph']
+                prompt = config['prompt_template'].format(content=para_text)
+                messages = [config['role'], {'role': 'user', 'content': prompt}]
+                llm_result = llm_chat(messages, task_id=task_id)
+                original = para_text
+
+                if llm_result:
+                    _save_mods_to_txt(output_txt, idx, original, llm_result)
+                    corrected_text = _parse_modified_text(llm_result)
+                    if corrected_text:
+                        modifications[idx] = corrected_text
+
+            # 应用修改并保存
+            # 需要从现有 TXT 文件中解析所有修改，合并本次新增的修改
+            from docx_editor import _parse_txt
+            
+            all_modifications = {}
+            
+            # 解析现有 TXT 文件中的所有修改
+            if Path(output_txt).exists():
+                all_modifications = _parse_txt(output_txt)
+                emit_log(task_id, 'log', f'[信息] 从现有 TXT 文件解析到 {len(all_modifications)} 个段落修改')
+            
+            # 合并本次新增的修改
+            all_modifications.update(modifications)
+            emit_log(task_id, 'log', f'[信息] 合并后共 {len(all_modifications)} 个段落修改')
+            
+            output_path = provider.infer_output_path()
+            original_name = tasks[task_id].get('original_filename', Path(input_file).stem)
+            output_path_fixed = str(RESULTS_DIR / f"{original_name}_fixed{Path(output_path).suffix}")
+            modified_count = provider.apply_and_save(all_modifications, output_path_fixed)
+
+            tasks[task_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'message': f'处理完成，修改 {modified_count} 个段落',
+                'output_filename': f"{original_name}_grammar.txt",
+                'completed_at': datetime.now().isoformat()
+            })
+            emit_log(task_id, 'completed', f'[完成] 总段落数：{total_paragraphs}，修改段落：{modified_count}')
+            # 保存已完成的任务
+            save_tasks_to_file()
+            return
+
         # choice == 'regenerate'，继续正常流程
         emit_log(task_id, 'log', '[重新检查] 开始重新进行语法检查...')
 
@@ -1230,7 +1534,6 @@ def run_paragraph_mode(task_id, input_file, version):
             'progress': progress,
             'message': f'检查段落 {idx}/{process_until}'
         })
-        emit_log(task_id, 'log', f'[段落 {idx}/{process_until}] 开始检查...')
 
         # 使用带进度推送的 LLM 调用
         config = PROCESSOR_CONFIGS['paragraph']
@@ -1255,7 +1558,7 @@ def run_paragraph_mode(task_id, input_file, version):
         'status': 'completed',
         'progress': 100,
         'message': f'处理完成，修改 {modified_count} 个段落',
-        'output_filename': f"{original_name}_fixed{Path(output_path).suffix}",
+        'output_filename': f"{original_name}_grammar.txt",
         'completed_at': datetime.now().isoformat()
     })
     emit_log(task_id, 'completed', f'[完成] 总段落数：{total_paragraphs}，修改段落：{modified_count}')

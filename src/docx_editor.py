@@ -148,6 +148,32 @@ def _save_mods_to_txt(txt_file: str, para_idx: int, para_text: str, llm_result: 
         f.write(content)
 
 
+def get_completed_paragraphs(txt_file: str) -> set:
+    """
+    从 grammar.txt 文件中提取已完成的段落索引集合
+
+    Args:
+        txt_file: TXT 文件路径
+
+    Returns:
+        set: 已完成的段落索引集合，例如 {1, 2, 3, 5, 8}
+    """
+    if not os.path.exists(txt_file):
+        return set()
+
+    completed = set()
+
+    with open(txt_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # 正则匹配 "段落 N" 标记
+    pattern = r'={60}\s*\n段落\s+(\d+)\s*\n={60}'
+    for match in re.finditer(pattern, content):
+        completed.add(int(match.group(1)))
+
+    return completed
+
+
 def _parse_txt(txt_file: str) -> dict:
     """
     从 TXT 文件中解析段落修改记录
@@ -198,13 +224,14 @@ def _parse_txt(txt_file: str) -> dict:
     return modifications
 
 
-def process_document(provider: DocumentProvider, output_txt: Optional[str] = None) -> Tuple[int, int]:
+def process_document(provider: DocumentProvider, output_txt: Optional[str] = None, start_from: Optional[set] = None) -> Tuple[int, int]:
     """
     基于 DocumentProvider 的通用语法检查流程，支持任意文档格式
 
     Args:
         provider: 文档提供者实例（TxtDocumentProvider / DocxDocumentProvider / ...）
         output_txt: 语法检查结果 TXT 文件路径（可选）
+        start_from: 已完成的段落索引集合，这些段落将被跳过（用于断点续传）
 
     Returns:
         Tuple[int, int]: (总段落数, 修改的段落数)
@@ -220,12 +247,21 @@ def process_document(provider: DocumentProvider, output_txt: Optional[str] = Non
 
     print(f"[信息] 处理范围：第 1 ~ {process_until} 段（共 {total_paragraphs} 段）")
 
-    if output_txt:
+    if start_from:
+        print(f"[信息] 跳过已完成的 {len(start_from)} 个段落，断点续传模式")
+
+    # 如果是全新开始（不是断点续传），清空 TXT 文件
+    if output_txt and not start_from:
         save_to_txt("", output_txt, title="", mode='w')
 
     modifications = {}
 
     for idx, para_text in enumerate(paragraphs[:process_until], 1):
+        # 跳过已完成的段落（断点续传）
+        if start_from and idx in start_from:
+            print(f"\r[段落 {idx} / {total_paragraphs}] 已完成，跳过...", end='', flush=True)
+            continue
+
         if _skip_para(para_text):
             continue
 
@@ -328,5 +364,6 @@ __all__ = [
     'process_document',
     'apply_txt_to_document',
     'apply_txt_to_document_with_output',
+    'get_completed_paragraphs',
     '_parse_modified_text',
 ]
