@@ -88,28 +88,58 @@ body {
 
 .btn-shutdown {
     color: #fff !important;
-    background: #f56c6c;
-    font-size: 14px;
-    padding: 10px 20px;
-    border-radius: 6px;
-    transition: all 0.2s;
-    font-weight: 500;
-    width: 80%;
-    max-width: 160px;
+    background: linear-gradient(135deg, #f56c6c 0%, #ff8a8a 100%) !important;
+    font-size: 15px !important;
+    padding: 12px 24px !important;
+    border-radius: 8px !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    font-weight: 600 !important;
+    width: 85% !important;
+    max-width: 180px !important;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 4px 16px rgba(245, 108, 108, 0.4) !important;
+    animation: pulse-red 2s ease-in-out infinite;
+    cursor: pointer;
+}
+
+.btn-shutdown svg {
+    width: 18px;
+    height: 18px;
+    opacity: 1 !important;
 }
 
 .btn-shutdown:hover {
-    background: #e05555 !important;
-    box-shadow: 0 4px 12px rgba(245, 108, 108, 0.5);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, #ff7676 0%, #ffaaba 100%) !important;
+    box-shadow: 0 6px 24px rgba(245, 108, 108, 0.6), 0 0 0 4px rgba(245, 108, 108, 0.2) !important;
+    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-shutdown:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 2px 8px rgba(245, 108, 108, 0.4) !important;
+}
+
+.btn-shutdown:focus {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3), 0 6px 24px rgba(245, 108, 108, 0.6) !important;
+}
+
+@keyframes pulse-red {
+    0%, 100% {
+        box-shadow: 0 4px 16px rgba(245, 108, 108, 0.4), 0 0 0 0 rgba(245, 108, 108, 0.4);
+    }
+    50% {
+        box-shadow: 0 4px 24px rgba(245, 108, 108, 0.6), 0 0 0 6px rgba(245, 108, 108, 0.2);
+    }
+}
+
+/* 悬停时暂停脉冲动画 */
+.btn-shutdown:hover {
+    animation: none;
 }
 
 .version {
